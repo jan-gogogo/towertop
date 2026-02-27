@@ -44,7 +44,7 @@ library Battle {
         bool playerAdvantage = _elementalAdvantageForPlayerAttack(ae.weaponMaterialsIdx, uint256(aoka.trait));
         bool aokaAdvantage = _elementalAdvantageForAokaAttack(uint256(aoka.trait), ae.armorMaterialsIdx);
 
-        bytes32[] memory rdNums = _generateRandomNums(seed);
+        (bytes32 roll1, bytes32 roll2, bytes32 roll3) = _generateRandomNums(seed);
 
         for (uint256 i = 0; i < 32; i++) {
             if (stunned) {
@@ -53,9 +53,6 @@ library Battle {
             }
 
             uint256 parity = i & 1;
-            uint256 roll1 = uint256(uint8(rdNums[0][i]));
-            uint256 roll2 = uint256(uint8(rdNums[1][i]));
-            uint256 roll3 = uint256(uint8(rdNums[2][i]));
 
             if (parity == 0) {
                 // player's round
@@ -84,12 +81,13 @@ library Battle {
                 hasElementalAdvantage = aokaAdvantage && ae.armorEquipped;
             }
 
-            damage =
-                _calculateDamage(attack, defense, crit, critChance, blockChance, roll1, roll2, hasElementalAdvantage);
+            damage = _calculateDamage(
+                attack, defense, crit, critChance, blockChance, uint8(roll1[i]), uint8(roll2[i]), hasElementalAdvantage
+            );
 
             if (stunChance > 0) {
                 unchecked {
-                    if (roll3 < (stunChance * 256) / 100) {
+                    if (uint8(roll3[i]) < (stunChance * 256) / 100) {
                         // skip the next attacker's action
                         stunned = true;
                     }
@@ -171,11 +169,10 @@ library Battle {
         return damage;
     }
 
-    function _generateRandomNums(bytes32 seed) private pure returns (bytes32[] memory rdNums) {
-        rdNums = new bytes32[](3);
-        rdNums[0] = seed.change(10, SEED_MIX_CRITCHANCE);
-        rdNums[1] = seed.change(11, SEED_MIX_BLOCKCHANCE);
-        rdNums[2] = seed.change(10, SEED_MIX_STUNCHANCE);
+    function _generateRandomNums(bytes32 seed) private pure returns (bytes32 roll1, bytes32 roll2, bytes32 roll3) {
+        roll1 = seed.change(10, SEED_MIX_CRITCHANCE);
+        roll2 = seed.change(11, SEED_MIX_BLOCKCHANCE);
+        roll3 = seed.change(10, SEED_MIX_STUNCHANCE);
     }
 
     function _elementalAdvantageForPlayerAttack(uint256 attackEle, uint256 defenseEle) private pure returns (bool) {
