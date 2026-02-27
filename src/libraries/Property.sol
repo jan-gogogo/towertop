@@ -1,0 +1,226 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Rarity} from "./Attribute.sol";
+
+enum ItemType {
+    Empty,
+    Book,
+    Potion,
+    Stone
+}
+
+enum EquipmentMaterials {
+    Wooden,
+    Iron,
+    Obsidian
+}
+
+enum EquipmentType {
+    Sword,
+    Armor,
+    Shield
+}
+
+/*================================================================================
+                                        equipment
+=================================================================================*/
+
+struct Sword {
+    EquipmentMaterials materials;
+    Rarity rarity; // 1-4
+    uint8 level; // 1-25
+    uint16 attack;
+    uint16 crit; // 0 - 5
+    uint16 critChance; // 0-100
+    uint16 stunChance; // 0-100
+}
+
+struct Armor {
+    EquipmentMaterials materials;
+    Rarity rarity; // 1-4
+    uint8 level; // 1-25
+    uint16 defense;
+}
+
+struct Shield {
+    Rarity rarity; // 1-4
+    uint8 level; // 1-25
+    uint16 defense;
+    uint16 blockChance; // 0-100
+    uint16 stunChance; // 0-100
+}
+
+struct Puppet {
+    Rarity rarity;
+    uint40 lastClaimAt;
+}
+
+library Property {
+    uint256 constant BOOK_C_ID = 1;
+    uint256 constant BOOK_B_ID = 2;
+    uint256 constant BOOK_A_ID = 3;
+    uint256 constant BOOK_S_ID = 4;
+
+    uint256 constant POTION_C_ID = 101;
+    uint256 constant POTION_B_ID = 102;
+    uint256 constant POTION_A_ID = 103;
+    uint256 constant POTION_S_ID = 104;
+
+    uint256 constant REFERSH_STONE_ID = 201;
+
+    uint256 constant COIN_ID = 301;
+
+    function asSingletonArrays(uint256 element1) internal pure returns (uint256[] memory array1) {
+        assembly ("memory-safe") {
+            array1 := mload(0x40)
+            mstore(array1, 1)
+            mstore(add(array1, 0x20), element1)
+
+            // update the next-available slot pointer
+            // because we mark "memory-safe"
+            mstore(0x40, add(array1, 64))
+        }
+    }
+
+    function getBookId(Rarity rarity) internal pure returns (uint256) {
+        return uint256(rarity) + 1;
+    }
+
+    function getPotionId(Rarity rarity) internal pure returns (uint256) {
+        return uint256(rarity) + 101;
+    }
+
+    function calSecondAttributesDirectly(Rarity rarity)
+        internal
+        pure
+        returns (uint16 crit, uint16 critChance, uint16 blockChance, uint16 stunChance)
+    {
+        if (rarity == Rarity.C) {
+            return (0, 0, 0, 0);
+        }
+
+        // if not through foundry, degrade(rarity - 1) the second attributes
+        unchecked {
+            (crit, critChance, blockChance, stunChance) = calSecondAttributes(Rarity(uint8(rarity) - 1));
+        }
+    }
+
+    function calSecondAttributes(Rarity rarity)
+        internal
+        pure
+        returns (uint16 crit, uint16 critChance, uint16 blockChance, uint16 stunChance)
+    {
+        if (rarity == Rarity.C) {
+            return (0, 0, 0, 0);
+        }
+
+        // here rarity is 1 to 3 (B/A/S)
+        uint8 mul = uint8(rarity);
+        crit = mul;
+        unchecked {
+            critChance = 7 * mul;
+            blockChance = 7 * mul;
+            stunChance = 5 * mul;
+        }
+    }
+
+    function calBookValue(Rarity rarity) internal pure returns (uint256) {
+        // C=10, B=20, A=40, S=80  ->  10 * 2^rarity
+        unchecked {
+            return 10 * (2 ** uint256(rarity));
+        }
+    }
+
+    function calPotionValue(Rarity rarity) internal pure returns (uint256) {
+        // C=15，B=30，A=60，S=120 -> 15 * 2^rarity
+        unchecked {
+            return 15 * (2 ** uint256(rarity));
+        }
+    }
+
+    function pushSword(Sword[] storage swords, EquipmentMaterials materials, Rarity rarity, uint8 level) internal {
+        (uint16 crit, uint16 critChance,, uint16 stunChance) = calSecondAttributesDirectly(rarity);
+        swords.push(
+            Sword({
+                materials: materials,
+                rarity: rarity,
+                level: level,
+                attack: calAttackForSword(rarity, level),
+                crit: crit,
+                critChance: critChance,
+                stunChance: stunChance
+            })
+        );
+    }
+
+    function pushArmor(Armor[] storage armors, EquipmentMaterials materials, Rarity rarity, uint8 level) internal {
+        armors.push(
+            Armor({materials: materials, rarity: rarity, level: level, defense: calDefenseForArmor(rarity, level)})
+        );
+    }
+
+    function pushShield(Shield[] storage shields, Rarity rarity, uint8 level) internal {
+        (,, uint16 blockChance, uint16 stunChance) = calSecondAttributesDirectly(rarity);
+        shields.push(
+            Shield({
+                rarity: rarity,
+                level: level,
+                defense: calDefenseForShield(rarity, level),
+                blockChance: blockChance,
+                stunChance: stunChance
+            })
+        );
+    }
+
+    function equipPrice(uint256 level, Rarity rarity) internal pure returns (uint256) {
+        unchecked {
+            return 20 * level * (1 + uint256(rarity));
+        }
+    }
+
+    function calEquipmentLevel(uint256 floorIndex) internal pure returns (uint8) {
+        unchecked {
+            // casting to 'uint8' is safe because floorIndex is at most 99
+            // forge-lint: disable-next-line(unsafe-typecast)
+            return uint8(floorIndex / 5 + 1);
+        }
+    }
+
+    function calRarity(uint8 random, uint256 floorIndex) internal pure returns (Rarity) {
+        if (floorIndex < 20) return Rarity.C;
+        unchecked {
+            uint256 mod = floorIndex >= 80 ? 3 : 2;
+            // casting to 'uint8' is safe because mod is at most 3
+            // forge-lint: disable-next-line(unsafe-typecast)
+            return Rarity(uint8(uint256(random) % mod));
+        }
+    }
+
+    function calEquipmentMaterials(uint8 random) internal pure returns (EquipmentMaterials) {
+        unchecked {
+            return EquipmentMaterials(uint8(random % 3));
+        }
+    }
+
+    function calAttackForSword(Rarity rarity, uint8 level) internal pure returns (uint16) {
+        unchecked {
+            uint8 rarityBonus = uint8(rarity) * 2;
+            return uint16(level + rarityBonus);
+        }
+    }
+
+    function calDefenseForArmor(Rarity rarity, uint8 level) internal pure returns (uint16) {
+        unchecked {
+            uint8 rarityBonus = uint8(rarity) * 2;
+            return uint16(level + rarityBonus);
+        }
+    }
+
+    function calDefenseForShield(Rarity rarity, uint8 level) internal pure returns (uint16) {
+        unchecked {
+            uint8 rarityBonus = uint8(rarity) * 2;
+            return uint16((level + 1) / 2 + rarityBonus);
+        }
+    }
+}
