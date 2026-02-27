@@ -6,13 +6,12 @@ import {Player} from "./libraries/Character.sol";
 import {Floor} from "./libraries/Environment.sol";
 
 /**
- * @title Game storage contract
+ * @title Game storage base
  * @author Jan
- * @notice Stores all logical data for the game
- * @dev GameFi TowerTop supports logic contract upgrades. All game logic lives in GameLogic;
- *      this contract is single-responsibility storage only. As a result, it necessarily
- *      exposes many "update data" functions (e.g. updateAfterBattle, updateHealth,
- *      updateExperience) that merely persist values computed by the logic contract.
+ * @notice Shared storage layout for the game
+ * @dev GameFi TowerTop uses an upgradeable architecture. This abstract contract defines
+ *      the full storage layout and low-level mutators; it is inherited by `GameLogic`
+ *      (and thus by `GameV1` behind the proxy), rather than being deployed on its own.
  */
 abstract contract GameStorage {
     uint256 private constant EMPTY_SLOT = 0;
