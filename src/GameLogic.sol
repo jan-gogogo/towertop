@@ -202,7 +202,9 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         bytes32 rewardSeed = seed.change(6, SEED_MIX_REWORD);
 
         uint256 equipmentId = 0;
+        // use rewardSeed array index 0
         if (Battle.equipmentDetermine(uint8(rewardSeed[0]), floorIndex)) {
+            // use rewardSeed array indexs [1,2,3]
             equipmentId = _rollEquipment(winner, rewardSeed, floorIndex);
         }
         // combine items and equipment
@@ -215,7 +217,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         private
         returns (uint256 equipmentId)
     {
-        // use rewardSeed array indexs from 1 to 3
+        // use rewardSeed array indexs from [1,2,3]
         (uint8 level, Rarity rarity, EquipmentMaterials materials, EquipmentType typ) =
             Battle.rewardEquipment(rewardSeed, floorIndex);
         (uint16 crit, uint16 critChance, uint16 blockChance, uint16 stunChance) =

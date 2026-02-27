@@ -9,6 +9,7 @@ import {Seed} from "./Seed.sol";
 
 library Battle {
     using Seed for bytes32;
+    using FloorIndex for uint256;
 
     // word "critchance"
     bytes32 private constant SEED_MIX_CRITCHANCE = 0x637269746368616e636500000000000000000000000000000000000000000000;
@@ -115,11 +116,42 @@ library Battle {
         internal
         pure
         returns (uint256[] memory assetIds, uint256[] memory values)
-    {}
+    {
+        unchecked {
+            // 1 or 2
+            uint256 count = (uint8(seed[4]) % 2) + 1;
+            // // around 5% or 0
+            uint8 s = (floorIndex.isBossFloor() && floorIndex > 69) ? 13 : 0;
+            assetIds = new uint256[](count + 1);
+            values = new uint256[](count + 1);
+
+            for (uint256 i = 0; i < count; i++) {
+                // 204 is around 80% of 256
+                bool isPotion = uint8(seed[i * 2 + 5]) < 204;
+                uint8 rarityRoll = uint8(seed[i * 2 + 6]);
+                uint256 id = 1;
+                if (rarityRoll < s) {
+                    id = 4;
+                } else if (rarityRoll < 26) {
+                    // around 10%
+                    id = 3;
+                } else if (rarityRoll < 78) {
+                    // around 30%
+                    id = 2;
+                }
+                if (isPotion) id += 100;
+                assetIds[i] = id;
+                values[i] = 1;
+            }
+            // append equipmentId and return to mint assets
+            assetIds[count] = eqiupmentId;
+            values[count] = 1;
+        }
+    }
 
     function equipmentDetermine(uint8 random, uint256 floorIndex) internal pure returns (bool) {
         uint256 segment = floorIndex / 10;
-        uint256 init = FloorIndex.isBossFloor(floorIndex) ? segment * 2 + 25 : segment + 5;
+        uint256 init = floorIndex.isBossFloor() ? segment * 2 + 25 : segment + 5;
         // `random` will be implicitly converted to uint256
         return random < (init * 256) / 100;
     }
