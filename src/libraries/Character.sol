@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 struct Player {
     // 1-100
     uint8 level;
-    uint16 experience;
+    uint32 experience;
     uint16 healthMax;
     uint16 health;
     uint16 attack;
@@ -33,12 +33,11 @@ struct Equipment {
 }
 
 library Character {
-    function isLevelUp(uint8 curLevel, uint16 gainedExp, uint16 curExp) internal pure returns (bool) {
+    function isLevelUp(uint8 curLevel, uint32 gainedExp, uint32 curExp) internal pure returns (bool) {
         unchecked {
             // overflow not possible
-            // (gainedExp + curExp) is at most 25750 (design: total exp 1→100), so sum < 30000
-            // curLevel is at most 100, so 5 * (curLevel + 1) <= 505
-            return gainedExp + curExp >= 5 * (uint16(curLevel) + 1);
+            // (gainedExp + curExp) is at most 1100
+            return gainedExp + curExp >= 5 * (uint32(curLevel) + 1);
         }
     }
 

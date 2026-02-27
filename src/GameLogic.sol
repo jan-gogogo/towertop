@@ -8,7 +8,7 @@ import {Player, AbilitiesExtra} from "./libraries/Character.sol";
 import {Rarity} from "./libraries/Attribute.sol";
 import {Character} from "./libraries/Character.sol";
 import {Battle} from "./libraries/Battle.sol";
-import {Enemy} from "./libraries/Enemy.sol";
+import {Enemy, Aoka} from "./libraries/Enemy.sol";
 import {Property, Sword, Armor, Shield, EquipmentMaterials, EquipmentType} from "./libraries/Property.sol";
 import {Oracle} from "./random/Oracle.sol";
 import {Floor, Environment} from "./libraries/Environment.sol";
@@ -137,8 +137,9 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         });
 
         bytes32 seed = Oracle.getSeed();
+        Aoka memory enemy = floor.enemies[enemyIdx];
         (uint256 playerHealFinal, uint256 aokaHealthFinal) =
-            Battle.combat(seed, player.health, player.attack, player.defense, floor.enemies[enemyIdx], ae);
+            Battle.combat(seed, player.health, player.attack, player.defense, enemy, ae);
 
         // don't use `playerHealFinal > 0` alone to determine if the player has won
         // because after 32 rounds, both the player and Aoka might still have health remaining
@@ -147,6 +148,8 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         player.health = playerHealFinal.toUint16();
         if (playerWin) {
             _rewardWinner(msg.sender, seed, curFloorIndex);
+            uint32 gainedExp = Battle.calRewardExperience(enemy.level, curFloorIndex);
+            _playerLevelUp(player, gainedExp);
         }
     }
 
@@ -167,7 +170,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     }
 
     /// @notice player level up, increase attributes
-    function _playerLevelUp(Player storage _player, uint16 gainedExp) private {
+    function _playerLevelUp(Player storage _player, uint32 gainedExp) private {
         // don't level up if already at max level
         // and won't increase the gainedExp
         uint8 curLevel = _player.level;
@@ -175,7 +178,11 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
             return;
         }
 
-        if (!Character.isLevelUp(curLevel, gainedExp, _player.experience)) return;
+        bool levelUp = Character.isLevelUp(curLevel, gainedExp, _player.experience);
+        if (!levelUp) {
+            _player.experience += gainedExp;
+            return;
+        }
 
         // increment values for the three basic attributes
         (uint16 healthMaxIncrement, uint16 attackIncrement, uint16 defenseIncrement) =
@@ -185,8 +192,9 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
             _player.healthMax += healthMaxIncrement;
             _player.attack += attackIncrement;
             _player.defense += defenseIncrement;
-
-            _player.experience += gainedExp;
+            // reset experience
+            _player.experience = 0;
+            // no matter how much experience is gained, only one level can be increased at a time
             _player.level++;
         }
     }
@@ -209,7 +217,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         }
         // combine items and equipment
         (uint256[] memory assetIds, uint256[] memory values) =
-            Battle.rewardItemsAppendEquipment(rewardSeed, floorIndex, equipmentId);
+            Battle.rewardItemsAppendEquipmentAndCoins(rewardSeed, floorIndex, equipmentId);
         _gameAssets.mintBatch(winner, assetIds, values, "");
     }
 

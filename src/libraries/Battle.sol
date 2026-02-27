@@ -112,18 +112,20 @@ library Battle {
         aHealthFinal = aHealth;
     }
 
-    function rewardItemsAppendEquipment(bytes32 seed, uint256 floorIndex, uint256 eqiupmentId)
+    function rewardItemsAppendEquipmentAndCoins(bytes32 seed, uint256 floorIndex, uint256 eqiupmentId)
         internal
         pure
         returns (uint256[] memory assetIds, uint256[] memory values)
     {
         unchecked {
+            bool isBoss = floorIndex.isBossFloor();
             // 1 or 2
             uint256 count = (uint8(seed[4]) % 2) + 1;
-            // // around 5% or 0
-            uint8 s = (floorIndex.isBossFloor() && floorIndex > 69) ? 13 : 0;
-            assetIds = new uint256[](count + 1);
-            values = new uint256[](count + 1);
+            // around 5% or 0
+            uint8 s = (isBoss && floorIndex > 69) ? 13 : 0;
+            // items + equipment and coin
+            assetIds = new uint256[](count + 2);
+            values = new uint256[](count + 2);
 
             for (uint256 i = 0; i < count; i++) {
                 // 204 is around 80% of 256
@@ -143,10 +145,35 @@ library Battle {
                 assetIds[i] = id;
                 values[i] = 1;
             }
-            // append equipmentId and return to mint assets
+            // append equipmentId
             assetIds[count] = eqiupmentId;
             values[count] = 1;
+
+            // append coin
+            uint256 coinCount = 0;
+            if (isBoss) {
+                coinCount = (floorIndex + 1) * 2 + 5;
+            } else {
+                coinCount = floorIndex / 5 + 1;
+            }
+            assetIds[count + 1] = Property.COIN_ID;
+            values[count + 1] = coinCount * 1 ether;
         }
+    }
+
+    function calRewardExperience(uint8 enemyLevel, uint256 floorIndex) internal pure returns (uint32) {
+        bool isBoss = floorIndex.isBossFloor();
+        uint256 exp = 0;
+        unchecked {
+            if (isBoss) {
+                exp = 10 * uint256(enemyLevel) + 5 * (floorIndex + 1);
+            } else {
+                exp = 2 * uint256(enemyLevel) + floorIndex + 1;
+            }
+        }
+        // casting to 'uint32' is safe because enemyLevel <=100, floorIndex <=99
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint32(exp);
     }
 
     function equipmentDetermine(uint8 random, uint256 floorIndex) internal pure returns (bool) {
