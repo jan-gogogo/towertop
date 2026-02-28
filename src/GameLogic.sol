@@ -201,6 +201,19 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         delItems(msg.sender, slots);
     }
 
+    function fullHeal() external onlyRegistered {
+        Player storage player = findPlayer(msg.sender);
+        if (player.health >= player.healthMax) {
+            revert IGameLogic.AlreadyFullHealth();
+        }
+        uint256 cost = _healToFullCost(player.level);
+        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) {
+            revert IGameLogic.InsufficientCoin();
+        }
+        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
+        player.health = player.healthMax;
+    }
+
     function getFloor(address addr) external view returns (Floor memory) {
         return findFloor(addr);
     }
@@ -278,6 +291,14 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         _gameToken.transferFrom(msg.sender, address(this), amount);
         _gameAssets.mint(msg.sender, Property.COIN_ID, amount * 10, "");
+    }
+
+    function _healToFullCost(uint8 level) private pure returns (uint256) {
+        // lv.1 costs 7
+        // lv.100 costs 205
+        unchecked {
+            return (5 + uint256(level) * 2) * 1 ether;
+        }
     }
 
     function _rewardWinner(address winner, bytes32 seed, uint256 floorIndex) private {

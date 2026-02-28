@@ -20,6 +20,7 @@ interface IGameLogic {
     error LengthOutOfRange1To5();
     error WrongItemType();
     error WrongSequence();
+    error AlreadyFullHealth();
 
     function born() external;
     function deposit(uint256 amount) external;
@@ -29,6 +30,7 @@ interface IGameLogic {
     function battle(uint256 enemySlot) external;
     function nextFloor() external;
     function useItems(uint256[] calldata slots) external;
+    function fullHeal() external;
 
     function getFloor(address addr) external view returns (Floor memory);
     function getPlayer(address addr) external view returns (Player memory);

@@ -12,6 +12,7 @@ bench_warehouse/
 
 # Docs
 docs/design
+docs/questions
 
 
 # Dotenv file

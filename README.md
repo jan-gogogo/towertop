@@ -88,7 +88,7 @@ Install Foundry by following the official guide:
 - **Gas Snapshots**
 
   ```shell
-  forge snapshot
+  forge snapshot --match-test "test_.*_for_snapshot"   
   ```
 
 - **Local Node (Anvil)**

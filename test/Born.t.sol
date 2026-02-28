@@ -84,6 +84,13 @@ contract BornTest is Test {
         harness = GameV1Harness(proxy);
     }
 
+    function test_born_for_snapshot() public {
+        vm.pauseGasMetering();
+        vm.prank(user);
+        vm.resetGasMetering();
+        gameLogic.born();
+    }
+
     function test_born_success_mintsTokenAndAssets() public {
         vm.prank(user);
         gameLogic.born();
