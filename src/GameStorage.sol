@@ -129,7 +129,7 @@ abstract contract GameStorage {
      * @notice Delete multiple items from a player's bag.
      * @param slots The indexes of the items in _bag, starting from 0.
      */
-    function delItems(address addr, uint256[] memory slots) internal {
+    function delItems(address addr, uint256[] calldata slots) internal {
         uint256 count = slots.length;
         if (count == 0) return;
 
@@ -137,7 +137,7 @@ abstract contract GameStorage {
         uint256 len = _mb.length;
 
         // use `delete` to remove elements
-        // after deleting, _bag.length does not change
+        // notice: after deleting, _bag.length does not change
         for (uint256 i = 0; i < count; i++) {
             uint256 slot = slots[i];
             if (slot >= len) revert ArrayOutOfBounds();
@@ -147,45 +147,19 @@ abstract contract GameStorage {
         }
     }
 
-    function updateAfterBattle(address addr, uint8 level, uint16 experience, uint16 healthMax, uint16 health) external {
-        Player storage player = _players[addr];
-        player.level = level;
-        player.experience = experience;
-        player.healthMax = healthMax;
-        player.health = health;
+    function findBag(address addr) internal view returns (uint256[] storage itemIds) {
+        return _bag[addr];
     }
 
-    function updateHealth(address addr, uint16 health) external {
-        _players[addr].health = health;
+    function findWarehouse(address addr) internal view returns (uint256[] storage weaponIds) {
+        return _warehouse[addr];
     }
 
-    function updateExperience(address addr, uint16 experience) external {
-        _players[addr].experience = experience;
-    }
-
-    function getBag(address addr) internal view returns (uint256[] memory itemIds) {
-        uint256[] storage _mb = _bag[addr];
-        uint256 len = _mb.length;
-        itemIds = new uint256[](len);
-        for (uint256 i = 0; i < len; i++) {
-            itemIds[i] = _mb[i];
-        }
-    }
-
-    function getWarehouse(address addr) internal view returns (uint256[] memory weaponIds) {
-        uint256[] storage _wh = _warehouse[addr];
-        uint256 len = _wh.length;
-        weaponIds = new uint256[](len);
-        for (uint256 i = 0; i < len; i++) {
-            weaponIds[i] = _wh[i];
-        }
-    }
-
-    function getFloor(address addr) internal view returns (Floor storage) {
+    function findFloor(address addr) internal view returns (Floor storage) {
         return _floor[addr];
     }
 
-    function getPlayer(address addr) internal view returns (Player storage) {
+    function findPlayer(address addr) internal view returns (Player storage) {
         return _players[addr];
     }
 

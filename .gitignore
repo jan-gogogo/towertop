@@ -17,6 +17,7 @@ docs/
 # Dotenv file
 .env
 .yul_compare
+.gas-snapshot
 
 AGENTS.md
 tower.json

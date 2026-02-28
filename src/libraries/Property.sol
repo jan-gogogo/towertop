@@ -57,6 +57,8 @@ struct Puppet {
 }
 
 library Property {
+    error WrongPotionId();
+    error WrongBookId();
     uint256 constant BOOK_C_ID = 1;
     uint256 constant BOOK_B_ID = 2;
     uint256 constant BOOK_A_ID = 3;
@@ -78,7 +80,7 @@ library Property {
             mstore(add(array1, 0x20), element1)
 
             // update the next-available slot pointer
-            // because we mark "memory-safe"
+            // because we marked "memory-safe"
             mstore(0x40, add(array1, 64))
         }
     }
@@ -125,17 +127,37 @@ library Property {
         }
     }
 
-    function calBookValue(Rarity rarity) internal pure returns (uint256) {
-        // C=10, B=20, A=40, S=80  ->  10 * 2^rarity
+    function calBookValue(uint256 itemId) internal pure returns (uint32) {
+        if (itemId < 1 || itemId > 4) {
+            revert WrongBookId();
+        }
         unchecked {
-            return 10 * (2 ** uint256(rarity));
+            Rarity rarity = Rarity(itemId - 1);
+            return calBookValue(rarity);
         }
     }
 
-    function calPotionValue(Rarity rarity) internal pure returns (uint256) {
+    function calBookValue(Rarity rarity) internal pure returns (uint32) {
+        // C=10, B=20, A=40, S=80  ->  10 * 2^rarity
+        unchecked {
+            return uint32(10 * (2 ** uint256(rarity)));
+        }
+    }
+
+    function calPotionValue(uint256 itemId) internal pure returns (uint16) {
+        if (itemId < 101 || itemId > 104) {
+            revert WrongPotionId();
+        }
+        unchecked {
+            Rarity rarity = Rarity(itemId - 101);
+            return calPotionValue(rarity);
+        }
+    }
+
+    function calPotionValue(Rarity rarity) internal pure returns (uint16) {
         // C=15，B=30，A=60，S=120 -> 15 * 2^rarity
         unchecked {
-            return 15 * (2 ** uint256(rarity));
+            return uint16(15 * (2 ** uint256(rarity)));
         }
     }
 
@@ -221,6 +243,22 @@ library Property {
         unchecked {
             uint8 rarityBonus = uint8(rarity) * 2;
             return uint16((level + 1) / 2 + rarityBonus);
+        }
+    }
+
+    function typeFromItemId(uint256 itemId) internal pure returns (ItemType typ) {
+        if (itemId == 0) {
+            return ItemType.Empty;
+        }
+
+        if (itemId < 101) {
+            typ = ItemType.Book;
+        } else if (itemId < 201) {
+            typ = ItemType.Potion;
+        } else if (itemId < 301) {
+            typ = ItemType.Stone;
+        } else {
+            typ = ItemType.Empty;
         }
     }
 }

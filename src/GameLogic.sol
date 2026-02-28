@@ -4,12 +4,11 @@ import {GameStorage} from "./GameStorage.sol";
 import {IGameAssets} from "./interfaces/IGameAssets.sol";
 import {IGameLogic} from "./interfaces/IGameLogic.sol";
 import {IGameToken} from "./interfaces/IGameToken.sol";
-import {Player, AbilitiesExtra} from "./libraries/Character.sol";
+import {Player, AbilitiesExtra, Character} from "./libraries/Character.sol";
 import {Rarity} from "./libraries/Attribute.sol";
-import {Character} from "./libraries/Character.sol";
 import {Battle} from "./libraries/Battle.sol";
 import {Enemy, Aoka} from "./libraries/Enemy.sol";
-import {Property, Sword, Armor, Shield, EquipmentMaterials, EquipmentType} from "./libraries/Property.sol";
+import {Property, Sword, Armor, Shield, EquipmentMaterials, EquipmentType, ItemType} from "./libraries/Property.sol";
 import {Oracle} from "./random/Oracle.sol";
 import {Floor, Environment} from "./libraries/Environment.sol";
 import {Seed} from "./libraries/Seed.sol";
@@ -39,7 +38,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
 
     /// @notice create a player
     function born() external {
-        if (getPlayer(msg.sender).createAt > 0) {
+        if (findPlayer(msg.sender).createAt > 0) {
             revert IGameLogic.PlayerAlreadyExists();
         }
 
@@ -114,13 +113,13 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         _gameToken.burn(address(this), burnAmount);
     }
 
-    function battle(uint256 enemyIdx) external onlyRegistered {
-        Floor storage floor = getFloor(msg.sender);
-        if (floor.enemies.length <= enemyIdx) {
-            revert IGameLogic.EnemyNotFound();
+    function battle(uint256 enemySlot) external onlyRegistered {
+        Floor storage floor = findFloor(msg.sender);
+        if (floor.enemies.length <= enemySlot) {
+            revert IGameLogic.EnemyNotFound(enemySlot);
         }
 
-        Player storage player = getPlayer(msg.sender);
+        Player storage player = findPlayer(msg.sender);
         (Sword memory sword, Armor memory armor, Shield memory shield) = getEquipped(msg.sender);
 
         // 0: no equipped armor, don't use `armorMaterialsIdx`
@@ -137,7 +136,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         });
 
         bytes32 seed = Oracle.getSeed();
-        Aoka memory enemy = floor.enemies[enemyIdx];
+        Aoka storage enemy = floor.enemies[enemySlot];
         (uint256 playerHealFinal, uint256 aokaHealthFinal) =
             Battle.combat(seed, player.health, player.attack, player.defense, enemy, ae);
 
@@ -147,9 +146,84 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         uint256 curFloorIndex = floor.index;
         player.health = playerHealFinal.toUint16();
         if (playerWin) {
+            // defeated aoka
+            enemy.health = 0;
             _rewardWinner(msg.sender, seed, curFloorIndex);
             uint32 gainedExp = Battle.calRewardExperience(enemy.level, curFloorIndex);
             _playerLevelUp(player, gainedExp);
+        }
+    }
+
+    function nextFloor() external onlyRegistered {
+        _nextFloor(msg.sender, Oracle.getSeed());
+    }
+
+    /// @notice currently, only Book and Potion can be used
+    function useItems(uint256[] calldata slots) external onlyRegistered {
+        uint256 len = slots.length;
+        if (len == 0 || len > 5) {
+            revert IGameLogic.LengthOutOfRange1To5();
+        }
+
+        // item slots must be sorted in ascending order
+        // and cannot be repeated
+        for (uint256 i = 1; i < len; i++) {
+            if (slots[i] <= slots[i - 1]) {
+                revert IGameLogic.WrongSequence();
+            }
+        }
+
+        Player storage player = findPlayer(msg.sender);
+
+        uint256[] storage items = findBag(msg.sender);
+        uint256 bagLen = items.length;
+        for (uint256 i = 0; i < len; i++) {
+            uint256 slot = slots[i];
+            if (slot >= bagLen) {
+                revert IGameLogic.ItemNotFound(slot);
+            }
+            uint256 itemId = items[slot];
+            if (itemId == 0) {
+                revert IGameLogic.ItemNotFound(slot);
+            }
+            ItemType typ = Property.typeFromItemId(itemId);
+            if (typ == ItemType.Book) {
+                _playerLevelUp(player, Property.calBookValue(itemId));
+            } else if (typ == ItemType.Potion) {
+                uint16 addHealth = Property.calPotionValue(itemId);
+                uint16 totalHealth = player.health + addHealth;
+                player.health = totalHealth > player.healthMax ? player.healthMax : totalHealth;
+            } else {
+                revert IGameLogic.WrongItemType();
+            }
+        }
+
+        delItems(msg.sender, slots);
+    }
+
+    function getFloor(address addr) external view returns (Floor memory) {
+        return findFloor(addr);
+    }
+
+    function getPlayer(address addr) external view returns (Player memory) {
+        return findPlayer(addr);
+    }
+
+    function getBag(address addr) external view returns (uint256[] memory itemIds) {
+        uint256[] storage _mb = findBag(addr);
+        uint256 len = _mb.length;
+        itemIds = new uint256[](len);
+        for (uint256 i = 0; i < len; i++) {
+            itemIds[i] = _mb[i];
+        }
+    }
+
+    function getWarehouse(address addr) external view returns (uint256[] memory weaponIds) {
+        uint256[] storage _wh = findWarehouse(addr);
+        uint256 len = _wh.length;
+        weaponIds = new uint256[](len);
+        for (uint256 i = 0; i < len; i++) {
+            weaponIds[i] = _wh[i];
         }
     }
 
@@ -178,7 +252,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
             return;
         }
 
-        bool levelUp = Character.isLevelUp(curLevel, gainedExp, _player.experience);
+        (bool levelUp, uint32 remainExp) = Character.isLevelUp(curLevel, gainedExp, _player.experience);
         if (!levelUp) {
             _player.experience += gainedExp;
             return;
@@ -193,7 +267,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
             _player.attack += attackIncrement;
             _player.defense += defenseIncrement;
             // reset experience
-            _player.experience = 0;
+            _player.experience = remainExp;
             // no matter how much experience is gained, only one level can be increased at a time
             _player.level++;
         }
@@ -269,17 +343,24 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     }
 
     function _initFloor(address addr, bytes32 seed) private {
-        Floor storage floor = getFloor(addr);
+        Floor storage floor = findFloor(addr);
         if (floor.index != 0) revert IGameLogic.WrongFloorIndex();
 
         _constructFloorData(floor, floor.index, seed);
     }
 
     function _nextFloor(address addr, bytes32 seed) private {
-        Floor storage floor = getFloor(addr);
+        Floor storage floor = findFloor(addr);
         uint8 curIndex = floor.index;
         // can't exceed 99
         if (curIndex >= 99) revert IGameLogic.ReachedTheTopFloor();
+
+        uint256 enemyCount = floor.enemies.length;
+        for (uint256 i = 0; i < enemyCount; i++) {
+            if (floor.enemies[i].health > 0) {
+                revert IGameLogic.MustDefeatAllEenemies();
+            }
+        }
 
         Environment.clearFloor(floor);
         // next
@@ -288,10 +369,10 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     }
 
     function _circle(address addr, bytes32 seed) private {
-        Floor storage floor = getFloor(addr);
+        Floor storage floor = findFloor(addr);
         if (floor.index != 99) revert IGameLogic.NotAt100Floor();
 
-        Player storage player = getPlayer(addr);
+        Player storage player = findPlayer(addr);
         Character.circle(player);
 
         //reset floor
@@ -319,8 +400,8 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     }
 
     function _onlyRegistered() private view {
-        if (getPlayer(msg.sender).createAt == 0) {
-            revert IGameLogic.PlayerNotFound();
+        if (findPlayer(msg.sender).createAt == 0) {
+            revert IGameLogic.PlayerNotFound(msg.sender);
         }
     }
 }

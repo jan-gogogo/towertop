@@ -33,11 +33,19 @@ struct Equipment {
 }
 
 library Character {
-    function isLevelUp(uint8 curLevel, uint32 gainedExp, uint32 curExp) internal pure returns (bool) {
+    function isLevelUp(uint8 curLevel, uint32 gainedExp, uint32 curExp) internal pure returns (bool, uint32) {
         unchecked {
             // overflow not possible
             // (gainedExp + curExp) is at most 1100
-            return gainedExp + curExp >= 5 * (uint32(curLevel) + 1);
+            uint32 needExp = 5 * (uint32(curLevel) + 1);
+            uint32 totalExp = gainedExp + curExp;
+            uint32 remainExp = 0;
+            bool levelUp = totalExp >= needExp;
+
+            if (levelUp) {
+                remainExp = totalExp - needExp;
+            }
+            return (levelUp, remainExp);
         }
     }
 
