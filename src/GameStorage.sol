@@ -23,8 +23,8 @@ abstract contract GameStorage {
     mapping(address palyer => uint256[]) private _bag;
     mapping(address palyer => uint256[]) private _warehouse;
     mapping(address palyer => Floor) _floor;
-    // 0:SwordId 1:ArmorId 2:ShieldId
-    mapping(address player => uint256[3]) private _equipped;
+    // 0:SwordId 1:ArmorId 2:ShieldId 3: Puppet
+    mapping(address player => uint256[4]) private _equipped;
 
     mapping(uint256 id => Sword) private _swords;
     mapping(uint256 id => Armor) private _armors;
@@ -45,6 +45,7 @@ abstract contract GameStorage {
     error EmptyItems();
     error CapacityExceeded();
     error ArrayOutOfBounds();
+    error NotEquippedId(uint256 id);
 
     /// @notice Initialize next-IDs (for proxy: call from implementation's initialize(); constructor only runs on impl, not on proxy).
     function _initNextIds() internal {
@@ -73,7 +74,7 @@ abstract contract GameStorage {
         }
 
         // add to player's warehouse
-        _addToWarehouse(addr, latest);
+        addToWarehouse(addr, latest);
         return latest;
     }
 
@@ -87,7 +88,7 @@ abstract contract GameStorage {
         unchecked {
             _nextArmorId++;
         }
-        _addToWarehouse(addr, latest);
+        addToWarehouse(addr, latest);
         return latest;
     }
 
@@ -101,7 +102,7 @@ abstract contract GameStorage {
         unchecked {
             _nextShieldId++;
         }
-        _addToWarehouse(addr, latest);
+        addToWarehouse(addr, latest);
         return latest;
     }
 
@@ -113,7 +114,7 @@ abstract contract GameStorage {
         unchecked {
             _nextPuppetId++;
         }
-        _addToWarehouse(addr, latest);
+        addToWarehouse(addr, latest);
         return latest;
     }
 
@@ -123,6 +124,18 @@ abstract contract GameStorage {
 
     function addItems(address addr, uint256[] memory itemIds) internal {
         _addItemBatch(addr, itemIds);
+    }
+
+    function equipWeapon(address addr, uint256 equipmentId) internal {
+        uint256 slot = _equippedSlot(equipmentId);
+        _equipped[addr][slot] = equipmentId;
+    }
+
+    function unequipWeapon(address addr, uint256 equipmentId) internal {
+        uint256 slot = _equippedSlot(equipmentId);
+        if (_equipped[addr][slot] != equipmentId) revert NotEquippedId(equipmentId);
+
+        delete _equipped[addr][slot];
     }
 
     /**
@@ -166,13 +179,14 @@ abstract contract GameStorage {
     function getEquipped(address addr)
         internal
         view
-        returns (Sword memory sword, Armor memory armor, Shield memory shield)
+        returns (Sword memory sword, Armor memory armor, Shield memory shield, Puppet memory puppet)
     {
-        // 0:SwordId 1:ArmorId 2:ShieldId
-        uint256[3] storage ids = _equipped[addr];
+        // 0:SwordId 1:ArmorId 2:ShieldId 3:Puppet
+        uint256[4] storage ids = _equipped[addr];
         uint256 swordId = ids[0];
         uint256 armorId = ids[1];
         uint256 shieldId = ids[2];
+        uint256 puppetId = ids[3];
         if (swordId > 0) {
             sword = _swords[swordId];
         }
@@ -182,10 +196,17 @@ abstract contract GameStorage {
         if (shieldId > 0) {
             shield = _shields[shieldId];
         }
+        if (puppetId > 0) {
+            puppet = _puppets[puppetId];
+        }
+    }
+
+    function isValidEquipment(uint256 id) internal pure returns (bool) {
+        return id >= 1e9 && id < 5e9;
     }
 
     /// @notice add a new weaponId to player's warehouse
-    function _addToWarehouse(address addr, uint256 id) private {
+    function addToWarehouse(address addr, uint256 id) internal {
         uint256[] storage _wh = _warehouse[addr];
         uint256 len = _wh.length;
 
@@ -232,6 +253,19 @@ abstract contract GameStorage {
 
         for (uint256 i = 0; i < remains; i++) {
             _mb.push(itemIds[op + i]);
+        }
+    }
+
+    function _equippedSlot(uint256 equipmentId) private pure returns (uint256) {
+        // the validity of equipmentId has already been checked before calling this function
+        if (equipmentId < 2e9) {
+            return 0;
+        } else if (equipmentId < 3e9) {
+            return 1;
+        } else if (equipmentId < 4e9) {
+            return 2;
+        } else {
+            return 3;
         }
     }
 }

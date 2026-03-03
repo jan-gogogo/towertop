@@ -11,7 +11,9 @@ interface IGameLogic {
     error InsufficientERC20();
     error EnemyNotFound(uint256 slot);
     error PlayerNotFound(address addr);
+    error EquipmentNotFound(uint256 id);
     error ItemNotFound(uint256 slot);
+    error InvalidEquipmentId(uint256 equipmentId);
     error ReachedTheTopFloor();
     error WrongFloorIndex();
     error NotAt100Floor();
@@ -31,6 +33,8 @@ interface IGameLogic {
     function nextFloor() external;
     function useItems(uint256[] calldata slots) external;
     function fullHeal() external;
+    function equip(uint256 equipmentId) external;
+    function unequip(uint256 equipmentId) external;
 
     function getFloor(address addr) external view returns (Floor memory);
     function getPlayer(address addr) external view returns (Player memory);

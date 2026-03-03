@@ -39,7 +39,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     /// @notice create a player
     function born() external {
         if (findPlayer(msg.sender).createAt > 0) {
-            revert IGameLogic.PlayerAlreadyExists();
+            revert PlayerAlreadyExists();
         }
 
         addPlayer(msg.sender, Character.initPlayer());
@@ -72,7 +72,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     /// @param amount token amount to deposit (in token's smallest unit, e.g. wei)
     function deposit(uint256 amount) external {
         if (amount < 1 ether) {
-            revert IGameLogic.AmountAtLeast1e18();
+            revert AmountAtLeast1e18();
         }
 
         _deposit(amount);
@@ -84,7 +84,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     /// @param v,r,s EIP-712 signature of permit(owner=signer, spender=this, value=amount, nonce=token.nonces(signer), deadline)
     function depositWithPermit(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external {
         if (amount < 1 ether) {
-            revert IGameLogic.AmountAtLeast1e18();
+            revert AmountAtLeast1e18();
         }
 
         _gameToken.permit(msg.sender, address(this), amount, deadline, v, r, s);
@@ -93,17 +93,17 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
 
     function withdraw(uint256 amount) external {
         if (amount < 1 gwei) {
-            revert IGameLogic.AmountAtLeast1e9();
+            revert AmountAtLeast1e9();
         }
 
         if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < amount) {
-            revert IGameLogic.InsufficientCoin();
+            revert InsufficientCoin();
         }
 
         _gameAssets.burn(msg.sender, Property.COIN_ID, amount);
         uint256 token = amount / 10;
         if (_gameToken.balanceOf(address(this)) < token) {
-            revert IGameLogic.InsufficientERC20();
+            revert InsufficientERC20();
         }
 
         // burn 5%
@@ -116,11 +116,11 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     function battle(uint256 enemySlot) external onlyRegistered {
         Floor storage floor = findFloor(msg.sender);
         if (floor.enemies.length <= enemySlot) {
-            revert IGameLogic.EnemyNotFound(enemySlot);
+            revert EnemyNotFound(enemySlot);
         }
 
         Player storage player = findPlayer(msg.sender);
-        (Sword memory sword, Armor memory armor, Shield memory shield) = getEquipped(msg.sender);
+        (Sword memory sword, Armor memory armor, Shield memory shield,) = getEquipped(msg.sender);
 
         // 0: no equipped armor, don't use `armorMaterialsIdx`
         AbilitiesExtra memory ae = AbilitiesExtra({
@@ -162,14 +162,14 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     function useItems(uint256[] calldata slots) external onlyRegistered {
         uint256 len = slots.length;
         if (len == 0 || len > 5) {
-            revert IGameLogic.LengthOutOfRange1To5();
+            revert LengthOutOfRange1To5();
         }
 
         // item slots must be sorted in ascending order
         // and cannot be repeated
         for (uint256 i = 1; i < len; i++) {
             if (slots[i] <= slots[i - 1]) {
-                revert IGameLogic.WrongSequence();
+                revert WrongSequence();
             }
         }
 
@@ -180,11 +180,11 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         for (uint256 i = 0; i < len; i++) {
             uint256 slot = slots[i];
             if (slot >= bagLen) {
-                revert IGameLogic.ItemNotFound(slot);
+                revert ItemNotFound(slot);
             }
             uint256 itemId = items[slot];
             if (itemId == 0) {
-                revert IGameLogic.ItemNotFound(slot);
+                revert ItemNotFound(slot);
             }
             ItemType typ = Property.typeFromItemId(itemId);
             if (typ == ItemType.Book) {
@@ -194,7 +194,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
                 uint16 totalHealth = player.health + addHealth;
                 player.health = totalHealth > player.healthMax ? player.healthMax : totalHealth;
             } else {
-                revert IGameLogic.WrongItemType();
+                revert WrongItemType();
             }
         }
 
@@ -204,14 +204,38 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     function fullHeal() external onlyRegistered {
         Player storage player = findPlayer(msg.sender);
         if (player.health >= player.healthMax) {
-            revert IGameLogic.AlreadyFullHealth();
+            revert AlreadyFullHealth();
         }
         uint256 cost = _healToFullCost(player.level);
         if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) {
-            revert IGameLogic.InsufficientCoin();
+            revert InsufficientCoin();
         }
         _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
         player.health = player.healthMax;
+    }
+
+    function equip(uint256 equipmentId) external onlyRegistered {
+        if (!isValidEquipment(equipmentId)) revert InvalidEquipmentId(equipmentId);
+
+        uint256[] storage equipmentIds = findWarehouse(msg.sender);
+        uint256 len = equipmentIds.length;
+        bool found = false;
+        for (uint256 i = 0; i < len; i++) {
+            if (equipmentIds[i] == equipmentId) {
+                delete equipmentIds[i];
+                found = true;
+                break;
+            }
+        }
+        if (!found) revert EquipmentNotFound(equipmentId);
+        equipWeapon(msg.sender, equipmentId);
+    }
+
+    function unequip(uint256 equipmentId) external onlyRegistered {
+        if (!isValidEquipment(equipmentId)) revert InvalidEquipmentId(equipmentId);
+
+        unequipWeapon(msg.sender, equipmentId);
+        addToWarehouse(msg.sender, equipmentId);
     }
 
     function getFloor(address addr) external view returns (Floor memory) {
@@ -365,7 +389,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
 
     function _initFloor(address addr, bytes32 seed) private {
         Floor storage floor = findFloor(addr);
-        if (floor.index != 0) revert IGameLogic.WrongFloorIndex();
+        if (floor.index != 0) revert WrongFloorIndex();
 
         _constructFloorData(floor, floor.index, seed);
     }
@@ -374,12 +398,12 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         Floor storage floor = findFloor(addr);
         uint8 curIndex = floor.index;
         // can't exceed 99
-        if (curIndex >= 99) revert IGameLogic.ReachedTheTopFloor();
+        if (curIndex >= 99) revert ReachedTheTopFloor();
 
         uint256 enemyCount = floor.enemies.length;
         for (uint256 i = 0; i < enemyCount; i++) {
             if (floor.enemies[i].health > 0) {
-                revert IGameLogic.MustDefeatAllEenemies();
+                revert MustDefeatAllEenemies();
             }
         }
 
@@ -391,7 +415,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
 
     function _circle(address addr, bytes32 seed) private {
         Floor storage floor = findFloor(addr);
-        if (floor.index != 99) revert IGameLogic.NotAt100Floor();
+        if (floor.index != 99) revert NotAt100Floor();
 
         Player storage player = findPlayer(addr);
         Character.circle(player);
@@ -422,7 +446,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
 
     function _onlyRegistered() private view {
         if (findPlayer(msg.sender).createAt == 0) {
-            revert IGameLogic.PlayerNotFound(msg.sender);
+            revert PlayerNotFound(msg.sender);
         }
     }
 }

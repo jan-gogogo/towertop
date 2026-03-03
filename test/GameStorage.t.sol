@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {GameStorage} from "../src/GameStorage.sol";
-import {Sword, Armor, Shield, EquipmentMaterials} from "../src/libraries/Property.sol";
+import {Sword, Armor, Shield, Puppet, EquipmentMaterials} from "../src/libraries/Property.sol";
 import {Player} from "../src/libraries/Character.sol";
 import {Character} from "../src/libraries/Character.sol";
 import {Rarity} from "../src/libraries/Attribute.sol";
@@ -84,7 +84,11 @@ contract GameStorageHarness is GameStorage {
         return findPlayer(addr).level;
     }
 
-    function exposedGetEquipped(address addr) external view returns (Sword memory s, Armor memory a, Shield memory sh) {
+    function exposedGetEquipped(address addr)
+        external
+        view
+        returns (Sword memory s, Armor memory a, Shield memory sh, Puppet memory p)
+    {
         return getEquipped(addr);
     }
 }
@@ -235,7 +239,7 @@ contract GameStorageTest is Test {
 
     // ---------- getEquipped (no setter in GameStorage; default empty) ----------
     function test_getEquipped_defaultEmpty() public view {
-        (Sword memory s, Armor memory a, Shield memory sh) = harness.exposedGetEquipped(user);
+        (Sword memory s, Armor memory a, Shield memory sh,) = harness.exposedGetEquipped(user);
         assertEq(uint16(s.attack), 0, "default sword");
         assertEq(uint16(a.defense), 0, "default armor");
         assertEq(uint16(sh.blockChance), 0, "default shield");
