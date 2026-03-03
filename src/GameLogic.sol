@@ -238,6 +238,52 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         addToWarehouse(msg.sender, equipmentId);
     }
 
+    function buy(uint256 typeIndex, uint256 slot) external onlyRegistered {
+        if (typeIndex > 3) revert InvalidTypeIndex(typeIndex);
+
+        Floor storage floor = findFloor(msg.sender);
+        uint256 cost = 0;
+        uint256 assetId = 0;
+
+        if (typeIndex == 0) {
+            uint256[] storage itemIds = floor.shop.items;
+            if (slot >= itemIds.length) revert InvalidIndex(slot);
+            assetId = itemIds[slot];
+            if (assetId == 0) revert InvalidIndex(slot);
+            addItem(msg.sender, assetId);
+            delete itemIds[slot];
+            cost = Property.itemCost(assetId);
+        } else if (typeIndex == 1) {
+            Sword[] storage swords = floor.shop.swords;
+            if (slot >= swords.length) revert InvalidIndex(slot);
+            Sword memory sword = swords[slot];
+            if (sword.level == 0) revert InvalidIndex(slot);
+            cost = Property.equipmentCost(sword.level, sword.rarity);
+            assetId = addSword(msg.sender, sword);
+            delete swords[slot];
+        } else if (typeIndex == 2) {
+            Shield[] storage shields = floor.shop.shields;
+            if (slot >= shields.length) revert InvalidIndex(slot);
+            Shield memory shield = shields[slot];
+            if (shield.level == 0) revert InvalidIndex(slot);
+            cost = Property.equipmentCost(shield.level, shield.rarity);
+            assetId = addShield(msg.sender, shield);
+            delete shields[slot];
+        } else {
+            Armor[] storage armors = floor.shop.armors;
+            if (slot >= armors.length) revert InvalidIndex(slot);
+            Armor memory armor = armors[slot];
+            if (armor.level == 0) revert InvalidIndex(slot);
+            cost = Property.equipmentCost(armor.level, armor.rarity);
+            assetId = addArmor(msg.sender, armor);
+            delete armors[slot];
+        }
+
+        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
+        _gameAssets.mint(msg.sender, assetId, 1, "");
+        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
+    }
+
     function getFloor(address addr) external view returns (Floor memory) {
         return findFloor(addr);
     }

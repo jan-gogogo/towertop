@@ -59,6 +59,7 @@ struct Puppet {
 library Property {
     error WrongPotionId();
     error WrongBookId();
+    error WrongItemId();
     uint256 constant BOOK_C_ID = 1;
     uint256 constant BOOK_B_ID = 2;
     uint256 constant BOOK_A_ID = 3;
@@ -260,5 +261,35 @@ library Property {
         } else {
             typ = ItemType.Empty;
         }
+    }
+
+    function equipmentCost(uint8 level, Rarity rarity) internal pure returns (uint256) {
+        unchecked {
+            return (3 * uint256(level) + 8 * uint256(rarity) + 2) * 1 ether;
+        }
+    }
+
+    function itemCost(uint256 itemId) internal pure returns (uint256) {
+        if (!isValidBookOrPotion(itemId)) revert WrongItemId();
+
+        uint256 id = itemId;
+        uint256 add = 3;
+        uint256 mul = 5;
+        unchecked {
+            if (id > 100) {
+                // potion
+                add = 2;
+                mul = 4;
+                id -= 100;
+            }
+            id--;
+            return (mul * id + add) * 1 ether;
+        }
+    }
+
+    function isValidBookOrPotion(uint256 itemId) private pure returns (bool) {
+        if (itemId > 0 && itemId < 5) return true;
+        if (itemId > 100 && itemId < 105) return true;
+        return false;
     }
 }

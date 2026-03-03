@@ -23,6 +23,8 @@ interface IGameLogic {
     error WrongItemType();
     error WrongSequence();
     error AlreadyFullHealth();
+    error InvalidTypeIndex(uint256 typeIndex);
+    error InvalidIndex(uint256 index);
 
     function born() external;
     function deposit(uint256 amount) external;
@@ -35,6 +37,11 @@ interface IGameLogic {
     function fullHeal() external;
     function equip(uint256 equipmentId) external;
     function unequip(uint256 equipmentId) external;
+
+    /// @notice buy from shop
+    /// @param typeIndex 0:item, 1:sword, 2:shield, 3:armor
+    /// @param slot item or equipment's index, start with 0
+    function buy(uint256 typeIndex, uint256 slot) external;
 
     function getFloor(address addr) external view returns (Floor memory);
     function getPlayer(address addr) external view returns (Player memory);
