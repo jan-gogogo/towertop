@@ -7,8 +7,7 @@ import {IGameToken} from "../src/interfaces/IGameToken.sol";
 import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
-import {GameV1} from "../src/GameV1.sol";
-import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
+import {GameV0} from "../src/GameV0.sol";
 import {Player} from "../src/libraries/Character.sol";
 
 /**
@@ -19,28 +18,21 @@ contract FullHealTest is Test {
     IGameToken gameToken;
     IGameAssets gameAssets;
 
-    address proxy;
-    address owner;
     address user;
 
     GameToken token;
 
     function setUp() public {
-        owner = address(0x1222223332);
         user = address(0x1234);
 
-        token = new GameToken("T3", "TowerTop");
+        token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
-        GameV1 impl = new GameV1();
+        GameV0 gameV0 = new GameV0(address(token), address(assets));
 
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), owner));
-        ERC1967Proxy proxyContract = new ERC1967Proxy(address(impl), data);
-        proxy = address(proxyContract);
+        token.setProxy(address(gameV0));
+        assets.setProxy(address(gameV0));
 
-        token.setProxy(proxy);
-        assets.setProxy(proxy);
-
-        gameLogic = IGameLogic(proxy);
+        gameLogic = IGameLogic(address(gameV0));
         gameToken = IGameToken(address(token));
         gameAssets = IGameAssets(address(assets));
     }

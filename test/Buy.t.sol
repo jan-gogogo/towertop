@@ -7,8 +7,7 @@ import {IGameToken} from "../src/interfaces/IGameToken.sol";
 import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
-import {GameV1} from "../src/GameV1.sol";
-import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
+import {GameV0} from "../src/GameV0.sol";
 import {Property} from "../src/libraries/Property.sol";
 import {Floor} from "../src/libraries/Environment.sol";
 import {Rarity} from "../src/libraries/Attribute.sol";
@@ -21,26 +20,21 @@ contract BuyTest is Test {
     IGameToken gameToken;
     IGameAssets gameAssets;
 
-    address proxy;
-    address owner;
+    address game;
     address user;
 
     function setUp() public {
-        owner = address(0x1222223332);
         user = address(0x1234);
 
-        GameToken token = new GameToken("T3", "TowerTop");
+        GameToken token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
-        GameV1 impl = new GameV1();
+        GameV0 gameV0 = new GameV0(address(token), address(assets));
+        game = address(gameV0);
 
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), owner));
-        ERC1967Proxy proxyContract = new ERC1967Proxy(address(impl), data);
-        proxy = address(proxyContract);
+        token.setProxy(game);
+        assets.setProxy(game);
 
-        token.setProxy(proxy);
-        assets.setProxy(proxy);
-
-        gameLogic = IGameLogic(proxy);
+        gameLogic = IGameLogic(game);
         gameToken = IGameToken(address(token));
         gameAssets = IGameAssets(address(assets));
     }
@@ -100,10 +94,10 @@ contract BuyTest is Test {
         // Coin is ERC1155 with 1e18 units; deposit gives amount*10 Coin per token. Min deposit 1 ether.
         uint256 tokenAmount = coinAmount / 10;
         if (tokenAmount < 1 ether) tokenAmount = 1 ether;
-        vm.prank(proxy);
+        vm.prank(game);
         gameToken.mint(user, tokenAmount);
         vm.startPrank(user);
-        gameToken.approve(proxy, tokenAmount);
+        gameToken.approve(game, tokenAmount);
         gameLogic.deposit(tokenAmount);
         vm.stopPrank();
     }

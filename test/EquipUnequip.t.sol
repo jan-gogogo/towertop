@@ -7,15 +7,16 @@ import {IGameToken} from "../src/interfaces/IGameToken.sol";
 import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
-import {GameV1} from "../src/GameV1.sol";
+import {GameV0} from "../src/GameV0.sol";
 import {GameStorage} from "../src/GameStorage.sol";
-import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
 import {Sword, Armor, Shield, Puppet} from "../src/libraries/Property.sol";
 
 /**
  * Harness to expose getEquipped for equip/unequip tests.
  */
-contract GameV1EquipHarness is GameV1 {
+contract GameV0EquipHarness is GameV0 {
+    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, _gameAssets_) {}
+
     function exposedGetEquipped(address addr)
         external
         view
@@ -32,31 +33,24 @@ contract EquipUnequipTest is Test {
     IGameLogic gameLogic;
     IGameToken gameToken;
     IGameAssets gameAssets;
-    GameV1EquipHarness harness;
+    GameV0EquipHarness harness;
 
-    address proxy;
-    address owner;
     address user;
 
     function setUp() public {
-        owner = address(0x1222223332);
         user = address(0x1234);
 
-        GameToken token = new GameToken("T3", "TowerTop");
+        GameToken token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
-        GameV1EquipHarness impl = new GameV1EquipHarness();
+        GameV0EquipHarness game = new GameV0EquipHarness(address(token), address(assets));
 
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), owner));
-        ERC1967Proxy proxyContract = new ERC1967Proxy(address(impl), data);
-        proxy = address(proxyContract);
+        token.setProxy(address(game));
+        assets.setProxy(address(game));
 
-        token.setProxy(proxy);
-        assets.setProxy(proxy);
-
-        gameLogic = IGameLogic(proxy);
+        gameLogic = IGameLogic(address(game));
         gameToken = IGameToken(address(token));
         gameAssets = IGameAssets(address(assets));
-        harness = GameV1EquipHarness(proxy);
+        harness = GameV0EquipHarness(address(game));
 
         vm.prank(user);
         gameLogic.born();
@@ -66,6 +60,14 @@ contract EquipUnequipTest is Test {
         vm.prank(user);
         vm.resetGasMetering();
         gameLogic.equip(1e9);
+    }
+
+    function test_unequip_snapshot() public {
+        vm.prank(user);
+        gameLogic.equip(1e9);
+        vm.prank(user);
+        vm.resetGasMetering();
+        gameLogic.unequip(1e9);
     }
 
     // -------------------------------------------------------------------------

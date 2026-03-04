@@ -4,15 +4,16 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 
 import {IGameLogic} from "../src/interfaces/IGameLogic.sol";
-import {GameV1} from "../src/GameV1.sol";
-import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
+import {GameV0} from "../src/GameV0.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
 import {Player} from "../src/libraries/Character.sol";
 import {Floor} from "../src/libraries/Environment.sol";
 
 /// @dev Test-only HARNESS that exposes internal getters for invariants.
-contract GameV1Harness is GameV1 {
+contract GameV0Harness is GameV0 {
+    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, _gameAssets_) {}
+
     function exposedGetPlayerLevel(address player) external view returns (uint8) {
         Player storage p = findPlayer(player);
         return p.level;
@@ -33,9 +34,9 @@ contract GameV1Harness is GameV1 {
 ///      It represents "a single player" interacting with the game.
 contract GameHandler {
     IGameLogic public immutable GAME;
-    GameV1Harness public immutable HARNESS;
+    GameV0Harness public immutable HARNESS;
 
-    constructor(IGameLogic _game, GameV1Harness _harness) {
+    constructor(IGameLogic _game, GameV0Harness _harness) {
         GAME = _game;
         HARNESS = _harness;
     }
@@ -67,29 +68,24 @@ contract GameHandler {
 }
 
 contract GameInvariantTest is Test {
-    GameV1Harness internal game;
+    GameV0Harness internal game;
     IGameLogic internal gameLogic;
     GameHandler internal handler;
 
     function setUp() public {
         // Deploy token and assets
-        GameToken token = new GameToken("T3", "TowerTop");
+        GameToken token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
 
-        // Deploy HARNESS implementation
-        GameV1Harness impl = new GameV1Harness();
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), address(this)));
-        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), data);
+        // Deploy game directly (no proxy)
+        GameV0Harness gameContract = new GameV0Harness(address(token), address(assets));
 
-        // Wire proxy into token and assets
-        token.setProxy(address(proxy));
-        assets.setProxy(address(proxy));
+        token.setProxy(address(gameContract));
+        assets.setProxy(address(gameContract));
 
-        // Cast proxy to interfaces used in tests
-        game = GameV1Harness(address(proxy));
-        gameLogic = IGameLogic(address(proxy));
+        game = GameV0Harness(address(gameContract));
+        gameLogic = IGameLogic(address(gameContract));
 
-        // Create handler and register it as target for invariant fuzzing
         handler = new GameHandler(gameLogic, game);
         targetContract(address(handler));
     }

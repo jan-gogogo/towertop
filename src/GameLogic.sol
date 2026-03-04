@@ -30,7 +30,10 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     bytes32 private constant SEED_MIX_REWORD = 0x7265776172640000000000000000000000000000000000000000000000000000;
     // word "floor"
     bytes32 private constant SEED_MIX_FLOOR = 0x666C6F6F72000000000000000000000000000000000000000000000000000000;
-
+    // word "upgrade"
+    bytes32 private constant SEED_MIX_UPGRADE = 0x7570677261646500000000000000000000000000000000000000000000000000;
+    // word "merge"
+    bytes32 private constant SEED_MIX_MERGE = 0x6d65726765000000000000000000000000000000000000000000000000000000;
     modifier onlyRegistered() {
         _onlyRegistered();
         _;
@@ -65,6 +68,8 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         _gameToken.mint(msg.sender, 1 ether);
 
         _initFloor(msg.sender, Oracle.getSeed().change(5, SEED_MIX_FLOOR));
+
+        emit Born(msg.sender);
     }
 
     /// @notice deposit ERC20 game token into this contract (proxy)
@@ -152,6 +157,8 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
             uint32 gainedExp = Battle.calRewardExperience(enemy.level, curFloorIndex);
             _playerLevelUp(player, gainedExp);
         }
+
+        emit Combat(msg.sender, seed, floor, player, ae, enemy);
     }
 
     function nextFloor() external onlyRegistered {
@@ -284,6 +291,172 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
     }
 
+    function upgrade(uint256 equipmentId) external onlyRegistered {
+        if (equipmentId == 0) revert InvalidEquipmentId(equipmentId);
+        // 0:SwordId 1:ArmorId 2:ShieldId 3: Puppet (cann't upgrade)
+        uint256[4] storage equippedIds = findEquipped(msg.sender);
+
+        EquipmentType typ;
+        bool found = false;
+        for (uint256 i = 0; i < 3; i++) {
+            if (equippedIds[i] == equipmentId) {
+                typ = EquipmentType(i);
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            // seek in warehouse
+            uint256[] storage weaponIds = findWarehouse(msg.sender);
+            uint256 len = weaponIds.length;
+            for (uint256 i = 0; i < len; i++) {
+                if (weaponIds[i] == equipmentId) {
+                    typ = Property.typeFromEquipmentId(equipmentId);
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found) revert InvalidEquipmentId(equipmentId);
+
+        uint8 curLevel = _getEquipmentLevel(equipmentId, typ);
+
+        // level <=25
+        if (curLevel >= Property.MAX_EQUIPMENT_LEVEL) revert ReachedMaxLevel();
+
+        // check player's coin balance
+        uint256 cost = Property.upgradeEquipmentCost(curLevel);
+        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
+
+        bytes32 upgradeSeed = Oracle.getSeed().change(7, SEED_MIX_UPGRADE);
+        if (Property.determineUpgrade(uint8(upgradeSeed[0]), curLevel)) {
+            _upgradeEquipment(equipmentId, typ);
+        }
+
+        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
+    }
+
+    function mergeSword(uint256 mainEquipmentId, uint256 subEquipmentId) external {
+        _mergeEquipment(EquipmentType.Sword, mainEquipmentId, subEquipmentId);
+    }
+
+    function mergeArmor(uint256 mainEquipmentId, uint256 subEquipmentId) external {
+        _mergeEquipment(EquipmentType.Armor, mainEquipmentId, subEquipmentId);
+    }
+
+    function mergeShield(uint256 mainEquipmentId, uint256 subEquipmentId) external {
+        _mergeEquipment(EquipmentType.Shield, mainEquipmentId, subEquipmentId);
+    }
+
+    function _mergeEquipment(EquipmentType typ, uint256 mainId, uint256 subId) private {
+        if (mainId == 0) revert InvalidEquipmentId(mainId);
+        if (subId == 0) revert InvalidEquipmentId(subId);
+        if (mainId == subId) revert SameEquipmentIds();
+
+        uint256 equippedSlot = uint256(typ);
+        if (findEquipped(msg.sender)[equippedSlot] != mainId) revert InvalidEquipmentId(mainId);
+
+        uint256[] storage warehouse = findWarehouse(msg.sender);
+        uint256 len = warehouse.length;
+        uint256 subIdx = len;
+        for (uint256 i = 0; i < len; i++) {
+            if (warehouse[i] == subId) {
+                subIdx = i;
+                break;
+            }
+        }
+        if (subIdx >= len) revert InvalidEquipmentId(subId);
+        if (Property.typeFromEquipmentId(subId) != typ) revert InvalidEquipmentId(subId);
+
+        bytes32 mergeSeed = Oracle.getSeed().change(5, SEED_MIX_MERGE);
+        uint256 cost;
+        if (typ == EquipmentType.Sword) cost = _mergeSwordImpl(mainId, subId, warehouse, subIdx, mergeSeed);
+        else if (typ == EquipmentType.Armor) cost = _mergeArmorImpl(mainId, subId, warehouse, subIdx, mergeSeed);
+        else cost = _mergeShieldImpl(mainId, subId, warehouse, subIdx, mergeSeed);
+
+        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
+        _gameAssets.burn(msg.sender, subId, 1);
+        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
+    }
+
+    function _mergeSwordImpl(
+        uint256 mainId,
+        uint256 subId,
+        uint256[] storage warehouse,
+        uint256 subIdx,
+        bytes32 mergeSeed
+    ) private returns (uint256 cost) {
+        Sword storage mainRef = findSword(mainId);
+        Sword storage subRef = findSword(subId);
+        if (mainRef.materials != subRef.materials || mainRef.rarity != subRef.rarity) revert CannotMerge();
+        if (mainRef.rarity == Rarity.S) revert ReachedMaxLevel();
+        cost = Property.mergeEquipmentCost(mainRef.level, mainRef.rarity);
+        if (Property.determineMerge(uint8(mergeSeed[0]), mainRef.rarity)) _swordEvolve(mainRef);
+        delete warehouse[subIdx];
+        clearSword(subId);
+    }
+
+    function _mergeArmorImpl(
+        uint256 mainId,
+        uint256 subId,
+        uint256[] storage warehouse,
+        uint256 subIdx,
+        bytes32 mergeSeed
+    ) private returns (uint256 cost) {
+        Armor storage mainRef = findArmor(mainId);
+        Armor storage subRef = findArmor(subId);
+        if (mainRef.materials != subRef.materials || mainRef.rarity != subRef.rarity) revert CannotMerge();
+        if (mainRef.rarity == Rarity.S) revert ReachedMaxLevel();
+        cost = Property.mergeEquipmentCost(mainRef.level, mainRef.rarity);
+        if (Property.determineMerge(uint8(mergeSeed[0]), mainRef.rarity)) _armorEvolve(mainRef);
+        delete warehouse[subIdx];
+        clearArmor(subId);
+    }
+
+    function _mergeShieldImpl(
+        uint256 mainId,
+        uint256 subId,
+        uint256[] storage warehouse,
+        uint256 subIdx,
+        bytes32 mergeSeed
+    ) private returns (uint256 cost) {
+        Shield storage mainRef = findShield(mainId);
+        Shield storage subRef = findShield(subId);
+        if (mainRef.rarity != subRef.rarity) revert CannotMerge();
+        if (mainRef.rarity == Rarity.S) revert ReachedMaxLevel();
+        cost = Property.mergeEquipmentCost(mainRef.level, mainRef.rarity);
+        if (Property.determineMerge(uint8(mergeSeed[0]), mainRef.rarity)) _shieldEvolve(mainRef);
+        delete warehouse[subIdx];
+        clearShield(subId);
+    }
+
+    function _swordEvolve(Sword storage sword) private {
+        Rarity newRarity = Rarity(uint8(sword.rarity) + 1);
+        sword.rarity = newRarity;
+        (uint16 crit, uint16 critChance,, uint16 stunChance) = Property.calSecondAttributes(newRarity);
+        sword.attack = Property.calAttackForSword(newRarity, sword.level);
+        sword.crit = crit;
+        sword.critChance = critChance;
+        sword.stunChance = stunChance;
+    }
+
+    function _armorEvolve(Armor storage armor) private {
+        Rarity newRarity = Rarity(uint8(armor.rarity) + 1);
+        armor.rarity = newRarity;
+        armor.defense = Property.calDefenseForArmor(newRarity, armor.level);
+    }
+
+    function _shieldEvolve(Shield storage shield) private {
+        Rarity newRarity = Rarity(uint8(shield.rarity) + 1);
+        shield.rarity = newRarity;
+        (,, uint16 blockChance, uint16 stunChance) = Property.calSecondAttributes(newRarity);
+        shield.blockChance = blockChance;
+        shield.stunChance = stunChance;
+        shield.defense = Property.calDefenseForShield(newRarity, shield.level);
+    }
+
     function getFloor(address addr) external view returns (Floor memory) {
         return findFloor(addr);
     }
@@ -293,20 +466,18 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     }
 
     function getBag(address addr) external view returns (uint256[] memory itemIds) {
-        uint256[] storage _mb = findBag(addr);
-        uint256 len = _mb.length;
-        itemIds = new uint256[](len);
-        for (uint256 i = 0; i < len; i++) {
-            itemIds[i] = _mb[i];
-        }
+        return _copyUint256Array(findBag(addr));
     }
 
     function getWarehouse(address addr) external view returns (uint256[] memory weaponIds) {
-        uint256[] storage _wh = findWarehouse(addr);
-        uint256 len = _wh.length;
-        weaponIds = new uint256[](len);
+        return _copyUint256Array(findWarehouse(addr));
+    }
+
+    function _copyUint256Array(uint256[] storage source) private view returns (uint256[] memory result) {
+        uint256 len = source.length;
+        result = new uint256[](len);
         for (uint256 i = 0; i < len; i++) {
-            weaponIds[i] = _wh[i];
+            result[i] = source[i];
         }
     }
 
@@ -487,6 +658,28 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         }
         if (aokaCount > 0) {
             Enemy.fillAokas(floor.enemies, seed, floorIndex, aokaCount);
+        }
+    }
+
+    function _getEquipmentLevel(uint256 equipmentId, EquipmentType typ) private view returns (uint8) {
+        if (typ == EquipmentType.Sword) return findSword(equipmentId).level;
+        if (typ == EquipmentType.Armor) return findArmor(equipmentId).level;
+        return findShield(equipmentId).level;
+    }
+
+    function _upgradeEquipment(uint256 equipmentId, EquipmentType typ) private {
+        if (typ == EquipmentType.Sword) {
+            Sword storage s = findSword(equipmentId);
+            s.level++;
+            s.attack = Property.calAttackForSword(s.rarity, s.level);
+        } else if (typ == EquipmentType.Armor) {
+            Armor storage a = findArmor(equipmentId);
+            a.level++;
+            a.defense = Property.calDefenseForArmor(a.rarity, a.level);
+        } else {
+            Shield storage s = findShield(equipmentId);
+            s.level++;
+            s.defense = Property.calDefenseForShield(s.rarity, s.level);
         }
     }
 

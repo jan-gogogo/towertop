@@ -24,34 +24,85 @@ The player starts on floor 1 and climbs up to floor 100 by defeating monsters, c
   - Spending can partially burn gold and partially feed a reward pool for leaderboards and future GameFI mechanics.
   - A Puppet periodically accumulates a small amount of gold for the player and decays if not claimed for a long time.
 
+### Documentation
+
+- **[Game design document 游戏设计文档](docs/GAME_DESIGN.md)** – Full game design (mechanics, formulas, economy, combat, floors, shop/forge). Includes technical notes on ERC1967 proxy, UUPS upgrades, and contract architecture.
+
 ---
 
 ## Contracts & Architecture
 
-### Core Contracts
+### Entry points
 
-- `GameV1`  
-  UUPS‑upgradeable logic contract responsible for initialization, upgrades, and access control.
+| Contract   | Path              | Description |
+|-----------|-------------------|-------------|
+| **GameV0** | `src/GameV0.sol`  | Non‑upgradeable entry: deploy directly with `GameV0(token, assets)`. Use for testnets or when upgrades are not needed. |
+| **GameV1** | `src/GameV1.sol`  | UUPS‑upgradeable logic: used as implementation behind an ERC1967 proxy. Handles initialization, upgrade authorization, and two‑step ownership. |
 
-- `GameLogic`  
-  Main game logic (combat, rewards, floor progression, etc.). It is not deployed directly, but used behind a proxy.
+### Core contracts
 
-- `GameStorage`  
-  Storage layout for players, floors, equipment, and related game state.
+| Contract       | Path                | Description |
+|----------------|---------------------|-------------|
+| **GameLogic**  | `src/GameLogic.sol` | Abstract contract: combat, rewards, floors, shop, forge, deposit/withdraw. Inherited by GameV0 / GameV1. |
+| **GameStorage**| `src/GameStorage.sol`| Abstract contract: storage layout for players, floors, equipment, bags, warehouse. Inherited by GameLogic. |
+| **GameAssets** | `src/GameAssets.sol`| ERC1155: equipment, items, and gold (multi‑token IDs). Only the game contract (proxy or GameV0) can mint/burn after `setProxy`. |
+| **GameToken**  | `src/GameToken.sol` | ERC20 “Tower Top Token” (TOP): deposit into game, in‑game Coin mint. Only the game contract can mint/burn after `setProxy`. |
+| **ERC1967Proxy** | `src/ERC1967Proxy.sol` | Minimal ERC1967 proxy used to point to GameV1 implementation. |
 
-- `GameAssets`  
-  ERC1155 assets contract managing equipment, items, and gold as multi‑token IDs.
+### Interfaces
 
-- `GameToken`  
-  ERC20 token used for depositing value into the game and other token‑level logic.
+| Interface     | Path                        | Description |
+|---------------|-----------------------------|-------------|
+| **IGameLogic**| `src/interfaces/IGameLogic.sol` | External game API (born, battle, nextFloor, buy, equip, deposit, etc.) and custom errors. |
+| **IGameToken**| `src/interfaces/IGameToken.sol` | Token operations and permit; used by game for mint/burn. |
+| **IGameAssets**| `src/interfaces/IGameAssets.sol`| Asset mint/burn; used by game. |
 
 ### Libraries
 
-- `libraries/Battle.sol` – Turn‑based combat, damage calculation, and enemy RNG.
-- `libraries/Character.sol` / `libraries/Enemy.sol` – Player and enemy data structures.
-- `libraries/Property.sol` – Equipment and item IDs, plus stat calculation helpers.
-- `libraries/Environment.sol` / `libraries/FloorIndex.sol` – Floor options and floor index utilities.
-- `libraries/Seed.sol` – Shared seed‑mixing and hashing utilities to keep on‑chain randomness reproducible.
+| Library        | Path                          | Description |
+|----------------|-------------------------------|-------------|
+| **Battle**    | `src/libraries/Battle.sol`    | Turn‑based combat, damage formula, reward generation. |
+| **Character** | `src/libraries/Character.sol` | Player struct, level‑up and circle logic. |
+| **Enemy**     | `src/libraries/Enemy.sol`     | Enemy (Aoka) struct and floor enemy generation. |
+| **Property**  | `src/libraries/Property.sol`  | Equipment/item IDs, stats, merge/upgrade cost and probability. |
+| **Environment**| `src/libraries/Environment.sol`| Floor, shop, forge, and floor‑option generation. |
+| **Attribute** | `src/libraries/Attribute.sol` | Rarity enum and related types. |
+| **FloorIndex**| `src/libraries/FloorIndex.sol` | Boss‑floor check (`isBossFloor`). |
+| **Seed**      | `src/libraries/Seed.sol`      | Seed mixing for reproducible on‑chain randomness. |
+
+### Randomness
+
+| Contract | Path                | Description |
+|----------|---------------------|-------------|
+| **Oracle** | `src/random/Oracle.sol` | Wraps `Randao`; currently uses `block.prevrandao` for combat/shop/forge RNG. Can be swapped for an external oracle later. |
+
+---
+
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| **DeployGameV0** | `script/DeployGameV0.s.sol` – Deploy GameToken, GameAssets, GameV0; then `setProxy` on token and assets to GameV0. Env: `TOKEN_PRIVATE_KEY`, `ASSET_PRIVATE_KEY`, `GAME_V0_PRIVATE_KEY`. |
+| **DeployGameV1Proxy** | `script/DeployGameV1Proxy.s.sol` – Deploy GameToken, GameAssets, GameV1, ERC1967Proxy; initialize proxy with `GameV1.initialize(token, assets, owner)`; then `setProxy` to proxy address. Env: `OWNER_ADDRESS`, `TOKEN_PRIVATE_KEY`, `ASSET_PRIVATE_KEY`, `GAME_V1_PRIVATE_KEY`, `PROXY_PRIVATE_KEY`. |
+
+---
+
+## Tests
+
+Tests use **GameV0** (no proxy). All under `test/`:
+
+| Test file | Coverage |
+|-----------|----------|
+| `Born.t.sol` | Player creation (born), initial state, floor 0. |
+| `BattleGameLogic.t.sol` | Combat, damage, level‑up, BOSS, death. |
+| `Buy.t.sol` | Shop purchase (items, equipment), reverts. |
+| `DepositWithdraw.t.sol` | Deposit, withdraw, 5% burn, depositWithPermit. |
+| `EquipUnequip.t.sol` | Equip / unequip equipment and puppet. |
+| `FullHeal.t.sol` | Full‑heal cost and reverts. |
+| `UseItems.t.sol` | Use items (potions, books), slot rules. |
+| `GameStorage.t.sol` | Storage helpers, bags, warehouse, capacity. |
+
+Run: `forge test`
 
 ---
 
@@ -99,13 +150,18 @@ Install Foundry by following the official guide:
 
 - **Scripts / Deployment**
 
-  Example: deploy the game proxy (adjust script parameters as needed):
+  Example: deploy the game with UUPS proxy (set env vars `OWNER_ADDRESS`, `TOKEN_PRIVATE_KEY`, etc., or use `--private-key` for a single key):
 
   ```shell
-  forge script script/DeployProxyGame.s.sol:DeployProxyGame \
+  forge script script/DeployGameV1Proxy.s.sol:DeployGameV1Proxy \
     --rpc-url <your_rpc_url> \
-    --private-key <your_private_key> \
     --broadcast
+  ```
+
+  For a direct deploy without proxy (GameV0):
+
+  ```shell
+  forge script script/DeployGameV0.s.sol:DeployGameV0 --rpc-url <your_rpc_url> --broadcast
   ```
 
 - **Cast Utility**

@@ -7,12 +7,13 @@ import {IGameToken} from "../src/interfaces/IGameToken.sol";
 import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
-import {GameV1} from "../src/GameV1.sol";
-import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
+import {GameV0} from "../src/GameV0.sol";
 import {Property} from "../src/libraries/Property.sol";
 import {Rarity} from "../src/libraries/Attribute.sol";
 
-contract GameV1Harness is GameV1 {
+contract GameV0Harness is GameV0 {
+    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, _gameAssets_) {}
+
     function exposedGetPlayerLevel(address player) external view returns (uint8) {
         return findPlayer(player).level;
     }
@@ -57,31 +58,24 @@ contract BornTest is Test {
     IGameLogic gameLogic;
     IGameToken gameToken;
     IGameAssets gameAssets;
-    GameV1Harness harness;
+    GameV0Harness harness;
 
-    address proxy;
-    address owner;
     address user;
 
     function setUp() public {
-        owner = address(0x1222223332);
         user = address(0x1234);
 
-        GameToken token = new GameToken("T3", "TowerTop");
+        GameToken token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
-        GameV1Harness impl = new GameV1Harness();
+        GameV0Harness game = new GameV0Harness(address(token), address(assets));
 
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), owner));
-        ERC1967Proxy proxyContract = new ERC1967Proxy(address(impl), data);
-        proxy = address(proxyContract);
+        token.setProxy(address(game));
+        assets.setProxy(address(game));
 
-        token.setProxy(proxy);
-        assets.setProxy(proxy);
-
-        gameLogic = IGameLogic(proxy);
+        gameLogic = IGameLogic(address(game));
         gameToken = IGameToken(address(token));
         gameAssets = IGameAssets(address(assets));
-        harness = GameV1Harness(proxy);
+        harness = GameV0Harness(address(game));
     }
 
     function test_born_for_snapshot() public {

@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {Floor} from "../libraries/Environment.sol";
-import {Player} from "../libraries/Character.sol";
+import {Player, AbilitiesExtra} from "../libraries/Character.sol";
+import {Aoka} from "../libraries/Enemy.sol";
 
 interface IGameLogic {
+    event Born(address indexed addr);
+    event Combat(address indexed addr, bytes32 seed, Floor floor, Player player, AbilitiesExtra ae, Aoka aoka);
+
     error PlayerAlreadyExists();
     error AmountAtLeast1e18();
     error AmountAtLeast1e9();
@@ -15,6 +19,7 @@ interface IGameLogic {
     error ItemNotFound(uint256 slot);
     error InvalidEquipmentId(uint256 equipmentId);
     error ReachedTheTopFloor();
+    error ReachedMaxLevel();
     error WrongFloorIndex();
     error NotAt100Floor();
     error MustDefeatAllEenemies();
@@ -25,6 +30,8 @@ interface IGameLogic {
     error AlreadyFullHealth();
     error InvalidTypeIndex(uint256 typeIndex);
     error InvalidIndex(uint256 index);
+    error CannotMerge();
+    error SameEquipmentIds();
 
     /**
      * @notice create a player (register and give initial assets)
@@ -94,6 +101,33 @@ interface IGameLogic {
      * @param slot index of the item or equipment in the shop list
      */
     function buy(uint256 typeIndex, uint256 slot) external;
+
+    /**
+     * @notice upgrade a single equipment by spending coin; level increases on success
+     * @param equipmentId equipment token id to upgrade
+     */
+    function upgrade(uint256 equipmentId) external;
+
+    /**
+     * @notice merge two swords into a higher-rarity main sword; sub sword is consumed
+     * @param mainEquipmentId equipment id of the main sword (must be equipped)
+     * @param subEquipmentId equipment id of the sub sword (must be in warehouse)
+     */
+    function mergeSword(uint256 mainEquipmentId, uint256 subEquipmentId) external;
+
+    /**
+     * @notice merge two armors into a higher-rarity main armor; sub armor is consumed
+     * @param mainEquipmentId equipment id of the main armor (must be equipped)
+     * @param subEquipmentId equipment id of the sub armor (must be in warehouse)
+     */
+    function mergeArmor(uint256 mainEquipmentId, uint256 subEquipmentId) external;
+
+    /**
+     * @notice merge two shields into a higher-rarity main shield; sub shield is consumed
+     * @param mainEquipmentId equipment id of the main shield (must be equipped)
+     * @param subEquipmentId equipment id of the sub shield (must be in warehouse)
+     */
+    function mergeShield(uint256 mainEquipmentId, uint256 subEquipmentId) external;
 
     /**
      * @notice get floor state for an address

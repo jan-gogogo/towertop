@@ -7,14 +7,15 @@ import {IGameToken} from "../src/interfaces/IGameToken.sol";
 import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
-import {GameV1} from "../src/GameV1.sol";
-import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
+import {GameV0} from "../src/GameV0.sol";
 import {Property} from "../src/libraries/Property.sol";
 import {Player} from "../src/libraries/Character.sol";
 import {Floor} from "../src/libraries/Environment.sol";
 import {Character} from "../src/libraries/Character.sol";
 
-contract GameV1BattleHarness is GameV1 {
+contract GameV0BattleHarness is GameV0 {
+    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, _gameAssets_) {}
+
     function exposedSetPlayerHealth(address addr, uint16 h) external {
         findPlayer(addr).health = h;
     }
@@ -27,33 +28,26 @@ contract BattleGameLogicTest is Test {
     IGameLogic gameLogic;
     IGameToken gameToken;
     IGameAssets gameAssets;
-    GameV1BattleHarness harness;
+    GameV0BattleHarness harness;
 
-    address proxy;
-    address owner;
     address user;
 
     GameToken token;
 
     function setUp() public {
-        owner = address(0x1222223332);
         user = address(0x1234);
 
-        token = new GameToken("T3", "TowerTop");
+        token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
-        GameV1BattleHarness impl = new GameV1BattleHarness();
+        GameV0BattleHarness game = new GameV0BattleHarness(address(token), address(assets));
 
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), owner));
-        ERC1967Proxy proxyContract = new ERC1967Proxy(address(impl), data);
-        proxy = address(proxyContract);
+        token.setProxy(address(game));
+        assets.setProxy(address(game));
 
-        token.setProxy(proxy);
-        assets.setProxy(proxy);
-
-        gameLogic = IGameLogic(proxy);
+        gameLogic = IGameLogic(address(game));
         gameToken = IGameToken(address(token));
         gameAssets = IGameAssets(address(assets));
-        harness = GameV1BattleHarness(proxy);
+        harness = GameV0BattleHarness(address(game));
 
         vm.startPrank(user);
         vm.prevrandao(0x1234);
@@ -227,20 +221,16 @@ contract BattleGameLogicTest is Test {
  */
 contract BattleGameLogicNotRegisteredTest is Test {
     IGameLogic gameLogic;
-    address proxy;
     address user;
 
     function setUp() public {
         user = address(0x1234);
-        GameToken token = new GameToken("T3", "TowerTop");
+        GameToken token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
-        GameV1BattleHarness impl = new GameV1BattleHarness();
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), address(0x1222223332)));
-        ERC1967Proxy proxyContract = new ERC1967Proxy(address(impl), data);
-        proxy = address(proxyContract);
-        token.setProxy(proxy);
-        assets.setProxy(proxy);
-        gameLogic = IGameLogic(proxy);
+        GameV0BattleHarness game = new GameV0BattleHarness(address(token), address(assets));
+        token.setProxy(address(game));
+        assets.setProxy(address(game));
+        gameLogic = IGameLogic(address(game));
     }
 
     function test_battle_revertWhenNotRegistered() public {

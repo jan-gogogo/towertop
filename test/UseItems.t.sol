@@ -7,15 +7,16 @@ import {IGameToken} from "../src/interfaces/IGameToken.sol";
 import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
-import {GameV1} from "../src/GameV1.sol";
-import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
+import {GameV0} from "../src/GameV0.sol";
 import {Property} from "../src/libraries/Property.sol";
 import {Player} from "../src/libraries/Character.sol";
 
 /**
  * Harness to expose addItem for useItems tests (put books/potions in bag).
  */
-contract GameV1UseItemsHarness is GameV1 {
+contract GameV0UseItemsHarness is GameV0 {
+    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, _gameAssets_) {}
+
     function exposedAddItemToBag(uint256 itemId) external {
         addItem(msg.sender, itemId);
     }
@@ -28,31 +29,24 @@ contract UseItemsTest is Test {
     IGameLogic gameLogic;
     IGameToken gameToken;
     IGameAssets gameAssets;
-    GameV1UseItemsHarness harness;
+    GameV0UseItemsHarness harness;
 
-    address proxy;
-    address owner;
     address user;
 
     function setUp() public {
-        owner = address(0x1222223332);
         user = address(0x1234);
 
-        GameToken token = new GameToken("T3", "TowerTop");
+        GameToken token = new GameToken("Tower Top Token", "TOP");
         GameAssets assets = new GameAssets("");
-        GameV1UseItemsHarness impl = new GameV1UseItemsHarness();
+        GameV0UseItemsHarness game = new GameV0UseItemsHarness(address(token), address(assets));
 
-        bytes memory data = abi.encodeCall(GameV1.initialize, (address(token), address(assets), owner));
-        ERC1967Proxy proxyContract = new ERC1967Proxy(address(impl), data);
-        proxy = address(proxyContract);
+        token.setProxy(address(game));
+        assets.setProxy(address(game));
 
-        token.setProxy(proxy);
-        assets.setProxy(proxy);
-
-        gameLogic = IGameLogic(proxy);
+        gameLogic = IGameLogic(address(game));
         gameToken = IGameToken(address(token));
         gameAssets = IGameAssets(address(assets));
-        harness = GameV1UseItemsHarness(proxy);
+        harness = GameV0UseItemsHarness(address(game));
     }
 
     // -------------------------------------------------------------------------

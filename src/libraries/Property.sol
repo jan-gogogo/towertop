@@ -60,6 +60,10 @@ library Property {
     error WrongPotionId();
     error WrongBookId();
     error WrongItemId();
+    error WrongEquipmentId();
+
+    uint256 constant MAX_EQUIPMENT_LEVEL = 25;
+
     uint256 constant BOOK_C_ID = 1;
     uint256 constant BOOK_B_ID = 2;
     uint256 constant BOOK_A_ID = 3;
@@ -247,20 +251,27 @@ library Property {
         }
     }
 
-    function typeFromItemId(uint256 itemId) internal pure returns (ItemType typ) {
-        if (itemId == 0) {
+    function typeFromItemId(uint256 id) internal pure returns (ItemType typ) {
+        if (id == 0) {
             return ItemType.Empty;
         }
 
-        if (itemId < 101) {
+        if (id < 101) {
             typ = ItemType.Book;
-        } else if (itemId < 201) {
+        } else if (id < 201) {
             typ = ItemType.Potion;
-        } else if (itemId < 301) {
+        } else if (id < 301) {
             typ = ItemType.Stone;
         } else {
             typ = ItemType.Empty;
         }
+    }
+
+    function typeFromEquipmentId(uint256 id) internal pure returns (EquipmentType ype) {
+        if (id >= 1e9 && id < 2e9) return EquipmentType.Sword;
+        if (id >= 2e9 && id < 3e9) return EquipmentType.Armor;
+        if (id >= 3e9 && id < 4e9) return EquipmentType.Shield;
+        revert WrongEquipmentId();
     }
 
     function equipmentCost(uint8 level, Rarity rarity) internal pure returns (uint256) {
@@ -284,6 +295,44 @@ library Property {
             }
             id--;
             return (mul * id + add) * 1 ether;
+        }
+    }
+
+    function upgradeEquipmentCost(uint8 curLevel) internal pure returns (uint256) {
+        unchecked {
+            return (uint256(curLevel) * 2 + 3) * 1 ether;
+        }
+    }
+
+    function determineUpgrade(uint8 random, uint8 curLevel) internal pure returns (bool) {
+        // P_upgrade = max(40%, 95% - 2% * L)
+        // overflow not possible because curLevel <=25
+        unchecked {
+            uint8 p = 243 - 5 * curLevel;
+            if (p > 102) p = 102;
+            return random < p;
+        }
+    }
+
+    function determineMerge(uint8 random, Rarity rarity) internal pure returns (bool) {
+        unchecked {
+            uint8 p = 0;
+            if (Rarity.C == rarity) {
+                p = 157; // 60%
+            } else if (Rarity.B == rarity) {
+                p = 79; // 30%
+            } else {
+                p = 13; // 5%
+            }
+            return random < p;
+        }
+    }
+
+    function mergeEquipmentCost(uint8 curLevel, Rarity curRarity) internal pure returns (uint256) {
+        //cost_merge = 5 + 3 * mainLevel + 5 * rarity_oldIndex
+        // overflow not possible because curLevel <=25, curRarity <=3
+        unchecked {
+            return (uint256(curLevel) * 3 + uint256(curRarity) * 5 + 5) * 1 ether;
         }
     }
 

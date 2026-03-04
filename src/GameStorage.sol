@@ -176,6 +176,34 @@ abstract contract GameStorage {
         return _players[addr];
     }
 
+    function findSword(uint256 id) internal view returns (Sword storage) {
+        return _swords[id];
+    }
+
+    function clearSword(uint256 id) internal {
+        delete _swords[id];
+    }
+
+    function findShield(uint256 id) internal view returns (Shield storage) {
+        return _shields[id];
+    }
+
+    function findArmor(uint256 id) internal view returns (Armor storage) {
+        return _armors[id];
+    }
+
+    function clearArmor(uint256 id) internal {
+        delete _armors[id];
+    }
+
+    function clearShield(uint256 id) internal {
+        delete _shields[id];
+    }
+
+    function findEquipped(address addr) internal view returns (uint256[4] storage) {
+        return _equipped[addr];
+    }
+
     function getEquipped(address addr)
         internal
         view
