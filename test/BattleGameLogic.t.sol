@@ -214,6 +214,17 @@ contract BattleGameLogicTest is Test {
         gameLogic.battle(10);
         vm.stopPrank();
     }
+
+    function test_battle_revertWhenEnemyAlreadyDead() public {
+        vm.startPrank(user);
+        // first battle defeats enemy at slot 0
+        gameLogic.battle(0);
+
+        // second battle on the same slot should see health == 0 and revert
+        vm.expectRevert(abi.encodeWithSelector(IGameLogic.EnemyNotFound.selector, uint256(0)));
+        gameLogic.battle(0);
+        vm.stopPrank();
+    }
 }
 
 /**

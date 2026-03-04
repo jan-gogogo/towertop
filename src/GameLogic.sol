@@ -142,6 +142,8 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
 
         bytes32 seed = Oracle.getSeed();
         Aoka storage enemy = floor.enemies[enemySlot];
+        if (enemy.health == 0) revert EnemyNotFound(enemySlot);
+
         (uint256 playerHealFinal, uint256 aokaHealthFinal) =
             Battle.combat(seed, player.health, player.attack, player.defense, enemy, ae);
 
@@ -459,6 +461,10 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
 
     function getFloor(address addr) external view returns (Floor memory) {
         return findFloor(addr);
+    }
+
+    function getEnemies(address addr) external view returns (Aoka[] memory) {
+        return findFloor(addr).enemies;
     }
 
     function getPlayer(address addr) external view returns (Player memory) {
