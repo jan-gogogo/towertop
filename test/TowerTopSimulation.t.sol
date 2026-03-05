@@ -72,7 +72,9 @@ contract TowerTopSimulationTest is Test {
 
     function setUp() public {
         user = address(0x1234);
-        seedBase = 0x1234;
+        // change the random seed, which will affect the outcome of each battle,
+        // dropped items, weapon forging, enemy stats, and enemy types
+        seedBase = 0x12345678;
         totalCoinConsumed = 0;
         bookUseCount = 0;
         potionUseCount = 0;

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 import {Aoka} from "./Enemy.sol";
 import {EquipmentMaterials, Sword, Shield, Armor, Property} from "./Property.sol";
 import {Rarity} from "./Attribute.sol";
+import {FloorIndex} from "./FloorIndex.sol";
 
 struct Floor {
     // 0–99
@@ -62,11 +63,15 @@ library Environment {
         }
     }
 
-    /// @notice calculate Aoka count on next floor
-    function aokaCountNextFloor(uint8 random, uint256 shopCount, uint256 foundryCount) internal pure returns (uint256) {
+    /// @notice calculate Aoka count on next floor (BOSS floor always 1)
+    function aokaCountNextFloor(uint8 random, uint256 floorIndex, uint256 shopCount, uint256 foundryCount)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (FloorIndex.isBossFloor(floorIndex)) return 1;
         unchecked {
-            // overflow not possible
-            // because shopCount ≤ 1, foundryCount ≤ 1
+            // overflow not possible; shopCount ≤ 1, foundryCount ≤ 1
             return uint256(random < 128 ? 3 : 4) - shopCount - foundryCount;
         }
     }

@@ -423,16 +423,16 @@ Puppet 按稀有度 C/B/A/S 获得金币，公式如下。
 
 **打败小怪**
 
-- 经验：`exp = enemy_level + floorIndex + 1`（floor_index 0–99）。  
+- 经验：`exp = enemy_level / 2 + floorIndex + 1`（floor_index 0–99）。  
   - 例：1 层小怪 level=1 → 2 exp；20 层小怪 level=20 → 40 exp。
 - 金币：`gold = 1 + floorIndex / 5`（整除）。  
   - 1–4 层→1，5–9 层→2，…，95–99 层→19。
 
 **打败 BOSS**
 
-- 经验：`exp = 5 * boss_level + (floorIndex + 1)`。  
+- 经验：`exp = 2 * boss_level + (floorIndex + 1)`。  
   - 例：5 层 BOSS level=5 → 30 exp；20 层 BOSS level=20 → 120 exp。
-- 金币：`gold = 5 + 2 * (floorIndex + 1)`。  
+- 金币：`gold = 5 +  (floorIndex + 1)`。  
   - 例：5 层→17，20 层→47。
 
 **刷新石（5.3.1）**

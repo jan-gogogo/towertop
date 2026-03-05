@@ -152,7 +152,7 @@ library Battle {
             // append coin
             uint256 coinCount = 0;
             if (isBoss) {
-                coinCount = (floorIndex + 1) * 2 + 5;
+                coinCount = (floorIndex + 1) + 5;
             } else {
                 coinCount = floorIndex / 5 + 1;
             }
@@ -166,9 +166,9 @@ library Battle {
         uint256 exp = 0;
         unchecked {
             if (isBoss) {
-                exp = 10 * uint256(enemyLevel) + 5 * (floorIndex + 1);
+                exp = 2 * uint256(enemyLevel) + (floorIndex + 1);
             } else {
-                exp = 2 * uint256(enemyLevel) + floorIndex + 1;
+                exp = uint256(enemyLevel) / 2 + floorIndex + 1;
             }
         }
         // casting to 'uint32' is safe because enemyLevel <=100, floorIndex <=99

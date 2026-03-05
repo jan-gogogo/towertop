@@ -671,7 +671,7 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         // foundry count is 1 or 0
         uint256 foundryCount = Environment.foundryCountNextFloor(uint8(seed[1]), floorIndex);
         // aoka count is 1 to 4
-        uint256 aokaCount = Environment.aokaCountNextFloor(uint8(seed[2]), shopCount, foundryCount);
+        uint256 aokaCount = Environment.aokaCountNextFloor(uint8(seed[2]), floorIndex, shopCount, foundryCount);
 
         if (shopCount > 0) {
             Environment.fillShop(floor.shop, seed, floorIndex);
