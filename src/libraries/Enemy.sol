@@ -121,13 +121,11 @@ library Enemy {
     function _attack(bool isBoss, uint256 floorIndex) private pure returns (uint16) {
         unchecked {
             if (isBoss) {
-                // casting to 'uint16' is safe because floorIndex <= 99
                 // forge-lint: disable-next-line(unsafe-typecast)
-                return floorIndex < 20 ? uint16(5 + floorIndex) : uint16(25 + (floorIndex * 3) / 2);
+                return floorIndex < 20 ? uint16(7 + floorIndex) : uint16(30 + (floorIndex * 3) / 2);
             } else {
-                // casting to 'uint16' is safe because floorIndex <= 99
                 // forge-lint: disable-next-line(unsafe-typecast)
-                return floorIndex < 20 ? uint16(2 + floorIndex / 3) : uint16(floorIndex + 39);
+                return floorIndex < 20 ? uint16(3 + floorIndex / 2) : uint16(floorIndex + 48);
             }
         }
     }
@@ -154,9 +152,8 @@ library Enemy {
 
     function _defense(bool isBoss, uint256 floorIndex) private pure returns (uint16) {
         unchecked {
-            // casting to 'uint16' is safe because floorIndex <= 99
             // forge-lint: disable-next-line(unsafe-typecast)
-            return isBoss ? uint16(2 + floorIndex / 3) : uint16(1 + floorIndex / 4);
+            return isBoss ? uint16(4 + floorIndex / 2) : uint16(2 + floorIndex / 3);
         }
     }
 
@@ -182,9 +179,8 @@ library Enemy {
 
     function _health(bool isBoss, uint256 floorIndex) private pure returns (uint16) {
         unchecked {
-            // casting to 'uint16' is safe because floorIndex <= 99
             // forge-lint: disable-next-line(unsafe-typecast)
-            return isBoss ? uint16(30 + floorIndex * 3) : uint16(8 + floorIndex * 2);
+            return isBoss ? uint16(40 + floorIndex * 3) : uint16(12 + (floorIndex * 5) / 2);
         }
     }
 

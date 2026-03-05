@@ -24,6 +24,7 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 
 - 商店购买、锻造房升级与合成等操作都会消耗金币。
 - 当前版本每层不做二维地图移动，而是用选项代替：例如某一层出现「血瓶 / 经验书 / BOSS」等，玩家从中选一项进入。
+- **转生**：到达第 100 层后可转生；转生后回到 1 级、装备/物品/金币保留、courage+1，并从第 1 层重新开始（详见 **2.8 转生（Circle）**）。
 
 **代码与结构索引**
 
@@ -48,7 +49,7 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 | 章节 | 内容 |
 |------|------|
 | 一 | 游戏概述 |
-| 二 | 游戏元素（2.1 持有物品～2.7 Puppet） |
+| 二 | 游戏元素（2.1 持有物品～2.8 转生） |
 | 三 | 战斗系统（3.1 战斗流程、3.2 伤害公式） |
 | 四 | 数值设计（4.1 玩家升级～4.6 锻造房） |
 | 五 | 经济与奖励（5.1 经济模型～5.3 打怪奖励） |
@@ -129,6 +130,20 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 
 玩家可拥有木偶，定期积累少量金币；若长时间不执行「领取」操作，已积累的金币会随时间衰减。木偶稀有度分 C/B/A/S 四档，初始为 C 级。具体公式见 **5.2 Puppet**。
 
+### 2.8 转生（Circle）
+
+玩家到达**第 100 层**（floor index = 99）后可调用 `circle()` 进行转生。
+
+**转生效果（与合约 `Character.circle`、`GameLogic._circle` 一致）**：
+
+- **等级与基础属性重置**：level、experience、healthMax、health、attack、defense 重置为 1 级初始值（level=1, experience=0, healthMax=100, health=100, attack=10, defense=5）。
+- **保留内容**：装备（已装备与仓库）、背包物品、金币（ERC1155 Coin）均**不销毁**，转生后继续保留。
+- **勇气值**：courage 在转生时 **+1**（可多次转生累计）。
+- **创建时间**：createAt 不变。
+- **楼层**：当前楼层数据被清空并**按第 1 层（floor index 0）**重新生成（商店/锻造房/小怪等），玩家从第 1 层继续游戏。
+
+**限制**：仅当玩家当前所在楼层为第 100 层（floor.index == 99）时可调用，否则 revert `NotAt100Floor`。
+
 ---
 
 ## 三、战斗系统
@@ -169,7 +184,7 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 **设计约束（与合约一致）**
 
 - 玩家：experience / healthMax / health / attack / defense 为 uint16；level 1–100；courage 0–100。
-- 敌人 Aoka：health / attack / defense 为 uint8（0–255）；level 1–100；crit 0–5；critChance / blockChance / stunChance 0–100。
+- 敌人 Aoka：health / attack / defense 为 uint16；level 1–100；crit 0–5；critChance / blockChance / stunChance 0–100。
 - 装备：level 1–25；Rarity C/B/A/S；材料 Wooden / Iron / Obsidian。
 - 目标：1–20 层偏易，玩家只要击杀约一半以上的小怪即可升级，并较轻松打赢前 4 个 BOSS。
 
@@ -240,40 +255,39 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 
 ### 4.4 敌人数值（小怪与 BOSS）
 
-以下为随机化前的**基础公式**（随机波动见 4.4.1）。
+以下为随机化前的**基础公式**（随机波动见 4.4.1）。与合约 `Enemy.sol` 一致；Aoka 的 health/attack/defense 为 uint16。
 
 **小怪（非 BOSS）**
 
 - level：`level = min(100, floorIndex + 1)`。
-- health：`health = 8 + floorIndex * 2`，上限 255（uint8）。
+- health：`health = 12 + (floorIndex * 5) / 2`（整数除）。
 - attack：分段。  
-  - `floorIndex < 20`（1–20 层）：`attack = 2 + floorIndex / 3`。  
-  - `floorIndex >= 20`（21 层起）：`attack = floorIndex + 39`（整数）。  
-- defense：`defense = 1 + floorIndex / 4`。  
-- 示例：1 层 atk=2；20 层 atk=8；30 层 atk=68；50 层 atk=88；100 层 atk=138。  
-- **crit / critChance / blockChance / stunChance**（小怪，平衡：低层为 0，随楼层缓升，避免前期暴毙与后期无趣）：  
+  - `floorIndex < 20`（1–20 层）：`attack = 3 + floorIndex / 2`。  
+  - `floorIndex >= 20`（21 层起）：`attack = floorIndex + 48`（整数）。  
+- defense：`defense = 2 + floorIndex / 3`。  
+- 示例：1 层 atk=3；20 层 atk=13；30 层 atk=78；50 层 atk=98；100 层 atk=147。  
+- **crit / critChance / blockChance / stunChance**（小怪，平衡：低层为 0，随楼层缓升）：  
   - **crit**（暴击倍数，0–5）：`crit = floorIndex < 30 ? 0 : (floorIndex < 60 ? 1 : 2)`。30 层前无暴击，30–59 层 1 倍，60 层起 2 倍。  
   - **critChance**（暴击率，0–100）：`critChance = min(15, floorIndex < 15 ? 0 : (floorIndex - 15) / 2)`。15 层前 0%，之后每约 2 层 +1%，上限 15%。  
   - **blockChance**（格挡率，0–100）：`blockChance = min(12, floorIndex < 20 ? 0 : (floorIndex - 20) / 3)`。20 层前 0%，之后每约 3 层 +1%，上限 12%。  
-  - **stunChance**（眩晕率，0–100）：`stunChance = min(8, floorIndex < 40 ? 0 : (floorIndex - 40) / 5)`。40 层前 0%，之后每约 5 层 +1%，上限 8%。避免小怪过早晕人导致体验过差。  
-  - 实现时以上均可按 `floorIndex` 计算后 clamp 到 uint8 与 4.2.2 上限；若需按 AokaType 微调，可在上述基础上 ±1～2。
+  - **stunChance**（眩晕率，0–100）：`stunChance = min(8, floorIndex < 40 ? 0 : (floorIndex - 40) / 5)`。40 层前 0%，之后每约 5 层 +1%，上限 8%。  
+  - 实现时以上按 `floorIndex` 计算后 clamp 到对应上限。
 
 **BOSS（每 5 层）**
 
 - level：`level = min(100, (floorIndex + 1))`，与楼层一致。
-- health：`health = 30 + floorIndex * 3`，上限 255；不足时用 min(255, ...)。
+- health：`health = 40 + floorIndex * 3`。
 - attack：分段。  
-  - `floorIndex <= 19`（1–20 层）：`attack = 5 + floorIndex`。  
-  - `floorIndex >= 20`（25 层起）：`attack = 25 + (floorIndex * 3) / 2`（整数除）。  
-- defense：`defense = 2 + floorIndex / 3`。  
-- 示例：5 层（fi=4）atk=9；20 层（fi=19）atk=24；30 层（fi=29）atk=68；60 层（fi=59）atk=113；75 层（fi=74）atk=136。  
-- 设计上 B 装等级在 60 层前有上限（如商店/掉落最高约 15 级），因此 60+ 层单靠 B 装防御成长有限，需要 A 装支撑。  
-- **crit / critChance / blockChance / stunChance**（BOSS，略高于同层小怪，但控制在上限内以保证可预期性）：  
-  - **crit**：`crit = floorIndex < 25 ? 1 : (floorIndex < 60 ? 2 : 3)`。前期 1 倍，25 层起 2 倍，60 层起 3 倍。  
-  - **critChance**：`critChance = min(20, 5 + floorIndex / 5)`。约 5% 起，每约 5 层 +1%，上限 20%（如 5 层 5%，25 层 10%，75 层 20%）。  
-  - **blockChance**：`blockChance = min(15, 5 + floorIndex / 6)`。约 5% 起，随楼层缓升，上限 15%。  
-  - **stunChance**：`stunChance = min(10, floorIndex < 20 ? 0 : (floorIndex - 20) / 5)`。20 层前 0%，之后每约 5 层 +1%，上限 10%。  
-  - 所有值实现时 clamp 到 uint8；BOSS 不超出上述范围，避免过度依赖 RNG。
+  - `floorIndex < 20`（1–20 层）：`attack = 7 + floorIndex`。  
+  - `floorIndex >= 20`（25 层起）：`attack = 30 + (floorIndex * 3) / 2`（整数除）。  
+- defense：`defense = 4 + floorIndex / 2`。  
+- 示例：5 层（fi=4）atk=11；20 层（fi=19）atk=26；30 层（fi=29）atk=73；60 层（fi=59）atk=118；75 层（fi=74）atk=141。  
+- **crit / critChance / blockChance / stunChance**（BOSS）：  
+  - **crit**：`crit = floorIndex < 25 ? 1 : (floorIndex < 60 ? 2 : 3)`。  
+  - **critChance**：`critChance = min(20, 5 + floorIndex / 5)`。  
+  - **blockChance**：`blockChance = min(15, 5 + floorIndex / 6)`。  
+  - **stunChance**：`stunChance = min(10, floorIndex < 20 ? 0 : (floorIndex - 20) / 5)`。  
+  - 所有值实现时 clamp 到对应类型与上限。
 
 **4.4.1 小怪 / BOSS 随机（种类、属性、数值波动）**
 
@@ -284,27 +298,23 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 - **属性（AokaTrait）**  
   - `trait = seed % 3` → Fire(0)、Earth(1)、Electric(2)，与玩家装备材料相克时约 1/3 有利、1/3 不利、1/3 无克。
 
-- **数值波动**  
-  - 在基础 health/attack/defense 上加减随机偏移，避免每层敌人完全一致。  
-  - 建议：`health_final = clamp(health_base + (seed % (2*range+1)) - range, 1, 255)`，`range = max(1, floorIndex / 5)`（如 1–4 层 ±1，5–9 层 ±2）。  
-  - attack、defense 同理：`range_atk = max(0, floorIndex / 4)`，`range_def = max(0, floorIndex / 5)`，再 clamp 到 0–255。  
-  - 同一敌人的 seed 只生成一次，用于 type、trait、health/attack/defense，保证可复现（链上可用 block 相关 seed，测试可用固定 seed）。
+- **数值波动**（仅小怪，BOSS 无波动；与 `Enemy._floatedHealth / _floatedAttack / _floatedDefense` 一致）  
+  - 在基础 health/attack/defense 上加减随机偏移：`value_final = value_base + (random % (2*range+1)) - range`，再保证非负。  
+  - **attack**：`range = floorIndex / 4`。  
+  - **defense**：`range = floorIndex / 5`。  
+  - **health**：`range = floorIndex / 5`，若为 0 则取 1。  
+  - 同一敌人的 random 只生成一次，用于 type、trait 及三项波动，保证可复现。
 
 **4.4.2 Tin（特殊敌人）与刷新石**
 
 - **出现条件**  
-  - 层数大于 20。  
-  - 仅在**有小怪槽位的普通层**生效；每个小怪槽位在决定具体敌人时，先做一次 Tin 判定。  
-  - Tin 出现概率：每个小怪槽位独立 roll，`P_Tin = 1/20`（5%）。  
-  - 若命中则该槽位为 Tin（AokaType == Tin）；否则按 4.4.1 生成普通小怪。
+  - 仅在**有小怪槽位的普通层**（非 BOSS 层）生效；每层在生成小怪前先做一次 Tin 判定（约 5%）。  
+  - 合约实现：`uint8(random[0]) < 13` 即约 5.08%；若命中则**第一个小怪槽位**为 Tin，否则按 4.4.1 生成普通小怪。
 
-- **Tin 数值**  
-  - 比当层普通小怪高 5–10 级。  
-  - 当层小怪基础 level：`base_level = min(100, floorIndex + 1)`。  
-  - Tin 的 level：`level_Tin = min(100, base_level + 5 + (seed % 6))`。  
-  - health/attack/defense 按 4.4 小怪公式用 `level_Tin` 代入，再可选做 4.4.1 的数值波动。  
-  - trait：同 4.4.1，`trait = seed % 3`。  
-  - crit/critChance/blockChance/stunChance 可与当层小怪相同或略高，由配置设定，需满足 uint8 与 4.2.2 上限。
+- **Tin 数值**（与合约一致）  
+  - **level**：与当层小怪相同，`level = floorIndex + 1`（不单独提高等级）。  
+  - **health/attack/defense**：基础公式同 4.4 小怪，在**数值波动**后的结果上再 **+25%**（即 `value += value / 4`），使 Tin 明显强于同层普通小怪。  
+  - trait、crit/critChance/blockChance/stunChance 与当层小怪相同。
 
 - **击败 Tin 的奖励**  
   - 固定掉落 1 枚**刷新石**（实现时需在物品表或 ItemType 中增加该类型）。  

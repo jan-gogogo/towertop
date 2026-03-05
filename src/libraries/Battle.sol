@@ -178,9 +178,8 @@ library Battle {
 
     function equipmentDetermine(uint8 random, uint256 floorIndex) internal pure returns (bool) {
         uint256 segment = floorIndex / 10;
-        uint256 init = floorIndex.isBossFloor() ? segment * 2 + 25 : segment + 5;
-        // `random` will be implicitly converted to uint256
-        return random < (init * 256) / 100;
+        uint256 init = floorIndex.isBossFloor() ? segment + 12 : (segment / 2) + 3;
+        return uint256(random) < (init * 256) / 100;
     }
 
     function rewardEquipment(bytes32 seed, uint256 floorIndex)

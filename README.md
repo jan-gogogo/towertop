@@ -130,6 +130,12 @@ Install Foundry by following the official guide:
   forge test
   ```
 
+- **Run battle simulation** (TowerTopSimulation: one player climbs and fights until top or stuck; uses books, potions, fullHeal, buy/upgrade when possible; prints final state)
+
+  ```shell
+  forge test --match-path test/TowerTopSimulation.t.sol -vv
+  ```
+
 - **Format Solidity**
 
   ```shell

@@ -130,10 +130,26 @@ interface IGameLogic {
     function mergeShield(uint256 mainEquipmentId, uint256 subEquipmentId) external;
 
     /**
+     * @notice Rebirth at the top floor (100th): reset level/stats to initial,
+     *         keep equipment, items and coins; courage +1; floor resets to first layer.
+     * @dev    Callable only when at floor index 99 (100th floor).
+     *         Player level, experience, health and combat stats are reset;
+     *         equipment, bag items and coins are unchanged; courage increments;
+     *         floor is cleared and rebuilt for layer 0.
+     */
+    function circle() external;
+
+    /**
      * @notice get floor state for an address
      * @param addr player address
      */
     function getFloor(address addr) external view returns (Floor memory);
+
+    /**
+     * @notice get current floor's enemies for an address
+     * @param addr player address
+     */
+    function getEnemies(address addr) external view returns (Aoka[] memory);
 
     /**
      * @notice get player state for an address

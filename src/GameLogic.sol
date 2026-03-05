@@ -34,6 +34,8 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
     bytes32 private constant SEED_MIX_UPGRADE = 0x7570677261646500000000000000000000000000000000000000000000000000;
     // word "merge"
     bytes32 private constant SEED_MIX_MERGE = 0x6d65726765000000000000000000000000000000000000000000000000000000;
+    // word "circle"
+    bytes32 private constant SEED_MIX_CIRCLE = 0x636972636c650000000000000000000000000000000000000000000000000000;
     modifier onlyRegistered() {
         _onlyRegistered();
         _;
@@ -352,6 +354,10 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         _mergeEquipment(EquipmentType.Shield, mainEquipmentId, subEquipmentId);
     }
 
+    function circle() external onlyRegistered {
+        _circle(msg.sender, Oracle.getSeed().change(6, SEED_MIX_CIRCLE));
+    }
+
     function _mergeEquipment(EquipmentType typ, uint256 mainId, uint256 subId) private {
         if (mainId == 0) revert InvalidEquipmentId(mainId);
         if (subId == 0) revert InvalidEquipmentId(subId);
@@ -560,7 +566,18 @@ abstract contract GameLogic is GameStorage, Oracle, IGameLogic {
         // combine items and equipment
         (uint256[] memory assetIds, uint256[] memory values) =
             Battle.rewardItemsAppendEquipmentAndCoins(rewardSeed, floorIndex, equipmentId);
+
         _gameAssets.mintBatch(winner, assetIds, values, "");
+
+        // add consumable rewards (book/potion) to bag
+        if (assetIds.length > 2) {
+            uint256 itemCount = assetIds.length - 2;
+            uint256[] memory itemIds = new uint256[](itemCount);
+            for (uint256 i = 0; i < itemCount; i++) {
+                itemIds[i] = assetIds[i];
+            }
+            addItems(winner, itemIds);
+        }
     }
 
     function _rollEquipment(address winner, bytes32 rewardSeed, uint256 floorIndex)
