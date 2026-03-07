@@ -1,59 +1,34 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {RouterTestBase} from "./RouterTestBase.sol";
 import {IGameLogic} from "../src/interfaces/IGameLogic.sol";
-import {IGameToken} from "../src/interfaces/IGameToken.sol";
-import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
-import {GameToken} from "../src/GameToken.sol";
-import {GameAssets} from "../src/GameAssets.sol";
-import {GameV0} from "../src/GameV0.sol";
-import {GameStorage} from "../src/GameStorage.sol";
-import {Sword, Armor, Shield, Puppet} from "../src/libraries/Property.sol";
+import {IHeroLogic} from "../src/interfaces/IHeroLogic.sol";
+import {Equipment, EquipmentType, Puppet} from "../src/libraries/Property.sol";
 
 /**
- * Harness to expose getEquipped for equip/unequip tests.
+ * Unit tests for Game.equip and Game.unequip.
  */
-contract GameV0EquipHarness is GameV0 {
-    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, _gameAssets_) {}
-
-    function exposedGetEquipped(address addr)
-        external
-        view
-        returns (Sword memory s, Armor memory a, Shield memory sh, Puppet memory p)
-    {
-        return getEquipped(addr);
-    }
-}
-
-/**
- * Unit tests for GameLogic.equip and GameLogic.unequip.
- */
-contract EquipUnequipTest is Test {
-    IGameLogic gameLogic;
-    IGameToken gameToken;
-    IGameAssets gameAssets;
-    GameV0EquipHarness harness;
-
+contract EquipUnequipTest is RouterTestBase {
     address user;
 
     function setUp() public {
         user = address(0x1234);
-
-        GameToken token = new GameToken("Tower Top Token", "TOP");
-        GameAssets assets = new GameAssets("");
-        GameV0EquipHarness game = new GameV0EquipHarness(address(token), address(assets));
-
-        token.setProxy(address(game));
-        assets.setProxy(address(game));
-
-        gameLogic = IGameLogic(address(game));
-        gameToken = IGameToken(address(token));
-        gameAssets = IGameAssets(address(assets));
-        harness = GameV0EquipHarness(address(game));
-
+        deployRouterStack();
         vm.prank(user);
         gameLogic.born();
+    }
+
+    function _getEquipped(address addr)
+        internal
+        view
+        returns (Equipment memory e0, Equipment memory e1, Equipment memory e2, Puppet memory p)
+    {
+        uint256[4] memory ids = heroLogic.getEquippedIds(addr);
+        if (ids[0] > 0) e0 = inventoryLogic.getEquipment(ids[0]);
+        if (ids[1] > 0) e1 = inventoryLogic.getEquipment(ids[1]);
+        if (ids[2] > 0) e2 = inventoryLogic.getEquipment(ids[2]);
+        if (ids[3] > 0) p = inventoryLogic.getPuppet(ids[3]);
     }
 
     function test_equip_snapshot() public {
@@ -70,10 +45,6 @@ contract EquipUnequipTest is Test {
         gameLogic.unequip(1e9);
     }
 
-    // -------------------------------------------------------------------------
-    // equip — happy path
-    // -------------------------------------------------------------------------
-
     function test_equip_sword_success() public {
         vm.startPrank(user);
         uint256 swordId = 1e9;
@@ -82,9 +53,10 @@ contract EquipUnequipTest is Test {
 
         uint256[] memory wh = gameLogic.getWarehouse(user);
         assertFalse(_arrayContains(wh, swordId), "warehouse must not contain equipped sword");
-        (Sword memory s,,,) = harness.exposedGetEquipped(user);
-        assertEq(s.attack, 8, "equipped sword attack from born()");
-        assertEq(s.level, 1, "equipped sword level");
+        (Equipment memory e0,,,) = _getEquipped(user);
+        assertEq(uint8(e0.etype), uint8(EquipmentType.Sword), "slot 0 is sword");
+        assertEq(e0.attack, 8, "equipped sword attack from born()");
+        assertEq(e0.level, 1, "equipped sword level");
     }
 
     function test_equip_puppet_success() public {
@@ -95,35 +67,31 @@ contract EquipUnequipTest is Test {
 
         uint256[] memory wh = gameLogic.getWarehouse(user);
         assertFalse(_arrayContains(wh, puppetId), "warehouse must not contain equipped puppet");
-        (,,, Puppet memory p) = harness.exposedGetEquipped(user);
-        assertEq(uint8(p.rarity), uint8(0), "equipped puppet rarity C"); // Rarity.C = 0
+        (,,, Puppet memory p) = _getEquipped(user);
+        assertEq(uint8(p.rarity), uint8(0), "equipped puppet rarity C");
     }
 
     function test_equip_then_unequip_roundtrip() public {
         vm.startPrank(user);
         uint256 swordId = 1e9;
         gameLogic.equip(swordId);
-        (Sword memory sBefore,,,) = harness.exposedGetEquipped(user);
-        assertEq(sBefore.attack, 8, "sword equipped");
+        (Equipment memory eBefore,,,) = _getEquipped(user);
+        assertEq(eBefore.attack, 8, "sword equipped");
 
         gameLogic.unequip(swordId);
         vm.stopPrank();
 
-        (Sword memory sAfter,,,) = harness.exposedGetEquipped(user);
-        assertEq(sAfter.attack, 0, "slot empty after unequip");
+        (Equipment memory eAfter,,,) = _getEquipped(user);
+        assertEq(eAfter.attack, 0, "slot empty after unequip");
         uint256[] memory wh = gameLogic.getWarehouse(user);
         assertTrue(_arrayContains(wh, swordId), "warehouse must contain sword after unequip");
     }
 
-    // -------------------------------------------------------------------------
-    // equip — reverts
-    // -------------------------------------------------------------------------
-
     function test_equip_revertWhenNotInWarehouse() public {
         vm.startPrank(user);
-        gameLogic.equip(1e9); // first equip succeeds
+        gameLogic.equip(1e9);
         vm.expectRevert(abi.encodeWithSelector(IGameLogic.EquipmentNotFound.selector, uint256(1e9)));
-        gameLogic.equip(1e9); // same id no longer in warehouse
+        gameLogic.equip(1e9);
         vm.stopPrank();
     }
 
@@ -148,10 +116,6 @@ contract EquipUnequipTest is Test {
         gameLogic.equip(1e9);
     }
 
-    // -------------------------------------------------------------------------
-    // unequip — happy path
-    // -------------------------------------------------------------------------
-
     function test_unequip_afterEquip_success() public {
         vm.startPrank(user);
         gameLogic.equip(1e9);
@@ -159,18 +123,13 @@ contract EquipUnequipTest is Test {
         vm.stopPrank();
 
         assertTrue(_arrayContains(gameLogic.getWarehouse(user), 1e9), "warehouse has sword after unequip");
-        (Sword memory s,,,) = harness.exposedGetEquipped(user);
-        assertEq(s.attack, 0, "sword slot empty");
+        (Equipment memory e0,,,) = _getEquipped(user);
+        assertEq(e0.attack, 0, "sword slot empty");
     }
-
-    // -------------------------------------------------------------------------
-    // unequip — reverts
-    // -------------------------------------------------------------------------
 
     function test_unequip_revertWhenNotEquipped() public {
         vm.startPrank(user);
-        // sword 1e9 is in warehouse but not equipped
-        vm.expectRevert(abi.encodeWithSelector(GameStorage.NotEquippedId.selector, uint256(1e9)));
+        vm.expectRevert(abi.encodeWithSelector(IHeroLogic.NotEquippedId.selector, uint256(1e9)));
         gameLogic.unequip(1e9);
         vm.stopPrank();
     }
@@ -188,10 +147,6 @@ contract EquipUnequipTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IGameLogic.PlayerNotFound.selector, notRegistered));
         gameLogic.unequip(1e9);
     }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
     function _arrayContains(uint256[] memory arr, uint256 value) internal pure returns (bool) {
         for (uint256 i = 0; i < arr.length; i++) {

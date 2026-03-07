@@ -122,10 +122,10 @@ library Enemy {
         unchecked {
             if (isBoss) {
                 // forge-lint: disable-next-line(unsafe-typecast)
-                return floorIndex < 20 ? uint16(7 + floorIndex) : uint16(30 + (floorIndex * 3) / 2);
+                return floorIndex < 20 ? uint16(7 + floorIndex) : uint16(30 + (floorIndex * 3));
             } else {
                 // forge-lint: disable-next-line(unsafe-typecast)
-                return floorIndex < 20 ? uint16(3 + floorIndex / 2) : uint16(floorIndex + 48);
+                return floorIndex < 20 ? uint16(3 + floorIndex) : uint16(floorIndex * 2);
             }
         }
     }
@@ -153,7 +153,7 @@ library Enemy {
     function _defense(bool isBoss, uint256 floorIndex) private pure returns (uint16) {
         unchecked {
             // forge-lint: disable-next-line(unsafe-typecast)
-            return isBoss ? uint16(4 + floorIndex / 2) : uint16(2 + floorIndex / 3);
+            return isBoss ? uint16(4 + floorIndex) : uint16(2 + floorIndex);
         }
     }
 
@@ -180,7 +180,7 @@ library Enemy {
     function _health(bool isBoss, uint256 floorIndex) private pure returns (uint16) {
         unchecked {
             // forge-lint: disable-next-line(unsafe-typecast)
-            return isBoss ? uint16(40 + floorIndex * 3) : uint16(12 + (floorIndex * 5) / 2);
+            return isBoss ? uint16(40 + floorIndex * 20) : uint16(12 + (floorIndex * 8));
         }
     }
 

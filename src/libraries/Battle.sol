@@ -18,6 +18,17 @@ library Battle {
     // word "stunchance"
     bytes32 private constant SEED_MIX_STUNCHANCE = 0x7374756e6368616e636500000000000000000000000000000000000000000000;
 
+    struct RoundVars {
+        uint256 attack;
+        uint256 damage;
+        uint256 defense;
+        uint256 crit;
+        uint256 critChance;
+        uint256 blockChance;
+        uint256 stunChance;
+        bool hasElementalAdvantage;
+    }
+
     function combat(
         bytes32 seed,
         uint256 playerHealth,
@@ -28,25 +39,14 @@ library Battle {
     ) internal pure returns (uint256 pHealthFinal, uint256 aHealthFinal) {
         uint256 pHealth = playerHealth;
         uint256 aHealth = aoka.health;
-
         uint256 pAttack = playerAttack + ae.attack;
         uint256 pDefense = playerDefense + ae.defense;
-
         bool stunned = false;
-        uint256 damage = 0;
-        uint256 attack = 0;
-        uint256 crit = 0;
-        uint256 critChance = 0;
-        uint256 stunChance = 0;
-        uint256 defense = 0;
-        uint256 blockChance = 0;
-        bool hasElementalAdvantage = false;
 
         bool playerAdvantage = _elementalAdvantageForPlayerAttack(ae.weaponMaterialsIdx, uint256(aoka.trait));
         bool aokaAdvantage = _elementalAdvantageForAokaAttack(uint256(aoka.trait), ae.armorMaterialsIdx);
-
         (bytes32 roll1, bytes32 roll2, bytes32 roll3) = _generateRandomNums(seed);
-
+        RoundVars memory rv;
         for (uint256 i = 0; i < 32; i++) {
             if (stunned) {
                 stunned = false;
@@ -56,52 +56,45 @@ library Battle {
             uint256 parity = i & 1;
 
             if (parity == 0) {
-                // player's round
-
-                // attacker
-                attack = pAttack;
-                crit = ae.crit;
-                critChance = ae.critChance;
-                stunChance = ae.stunChance;
-
-                // defender
-                defense = aoka.defense;
-                blockChance = aoka.blockChance;
-                hasElementalAdvantage = playerAdvantage;
+                rv.attack = pAttack;
+                rv.crit = ae.crit;
+                rv.critChance = ae.critChance;
+                rv.stunChance = ae.stunChance;
+                rv.defense = aoka.defense;
+                rv.blockChance = aoka.blockChance;
+                rv.hasElementalAdvantage = playerAdvantage;
             } else {
-                // Aoka's round
-                // attacker
-                attack = aoka.attack;
-                crit = aoka.crit;
-                critChance = aoka.critChance;
-                stunChance = aoka.stunChance;
-
-                // defender
-                defense = pDefense;
-                blockChance = ae.blockChance;
-                hasElementalAdvantage = aokaAdvantage && ae.armorEquipped;
+                rv.attack = aoka.attack;
+                rv.crit = aoka.crit;
+                rv.critChance = aoka.critChance;
+                rv.stunChance = aoka.stunChance;
+                rv.defense = pDefense;
+                rv.blockChance = ae.blockChance;
+                rv.hasElementalAdvantage = aokaAdvantage && ae.armorEquipped;
             }
 
-            damage = _calculateDamage(
-                attack, defense, crit, critChance, blockChance, uint8(roll1[i]), uint8(roll2[i]), hasElementalAdvantage
+            uint256 damage = _calculateDamage(
+                rv.attack,
+                rv.defense,
+                rv.crit,
+                rv.critChance,
+                rv.blockChance,
+                uint8(roll1[i]),
+                uint8(roll2[i]),
+                rv.hasElementalAdvantage
             );
 
-            if (stunChance > 0) {
+            if (rv.stunChance > 0) {
                 unchecked {
-                    if (uint8(roll3[i]) < (stunChance * 256) / 100) {
-                        // skip the next attacker's action
-                        stunned = true;
-                    }
+                    if (uint8(roll3[i]) < (rv.stunChance * 256) / 100) stunned = true;
                 }
             }
 
             unchecked {
                 if (parity == 0) {
-                    if (aHealth > damage) aHealth -= damage;
-                    else aHealth = 0;
+                    aHealth = damage < aHealth ? aHealth - damage : 0;
                 } else {
-                    if (pHealth > damage) pHealth -= damage;
-                    else pHealth = 0;
+                    pHealth = damage < pHealth ? pHealth - damage : 0;
                 }
             }
 
@@ -215,11 +208,11 @@ library Battle {
             damage = (damage * 110) / 100;
         }
 
-        if ((roll1 < (critChance * 256) / 100) && crit > 0) {
+        if ((crit > 0 && roll1 < (critChance * 256) / 100)) {
             damage += damage * crit;
         }
 
-        if ((roll2 < (blockChance * 256) / 100) && damage > 1) {
+        if ((damage > 1 && roll2 < (blockChance * 256) / 100)) {
             unchecked {
                 damage /= 2;
             }

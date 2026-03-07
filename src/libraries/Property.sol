@@ -23,30 +23,23 @@ enum EquipmentType {
 }
 
 /*================================================================================
-                                        equipment
+                                        equipment (unified union)
 =================================================================================*/
 
-struct Sword {
+//  Unified equipment:
+//  Sword uses attack/crit/critChance/stunChance;
+//  Armor uses defense;
+//  Shield uses defense/blockChance/stunChance.
+//  Unused fields are 0.
+struct Equipment {
+    EquipmentType etype;
     EquipmentMaterials materials;
     Rarity rarity; // 1-4
     uint8 level; // 1-25
     uint16 attack;
+    uint16 defense;
     uint16 crit; // 0 - 5
     uint16 critChance; // 0-100
-    uint16 stunChance; // 0-100
-}
-
-struct Armor {
-    EquipmentMaterials materials;
-    Rarity rarity; // 1-4
-    uint8 level; // 1-25
-    uint16 defense;
-}
-
-struct Shield {
-    Rarity rarity; // 1-4
-    uint8 level; // 1-25
-    uint16 defense;
     uint16 blockChance; // 0-100
     uint16 stunChance; // 0-100
 }
@@ -166,34 +159,57 @@ library Property {
         }
     }
 
-    function pushSword(Sword[] storage swords, EquipmentMaterials materials, Rarity rarity, uint8 level) internal {
+    function pushEquipmentSword(Equipment[] storage arr, EquipmentMaterials materials, Rarity rarity, uint8 level)
+        internal
+    {
         (uint16 crit, uint16 critChance,, uint16 stunChance) = calSecondAttributesDirectly(rarity);
-        swords.push(
-            Sword({
+        arr.push(
+            Equipment({
+                etype: EquipmentType.Sword,
                 materials: materials,
                 rarity: rarity,
                 level: level,
                 attack: calAttackForSword(rarity, level),
+                defense: 0,
                 crit: crit,
                 critChance: critChance,
+                blockChance: 0,
                 stunChance: stunChance
             })
         );
     }
 
-    function pushArmor(Armor[] storage armors, EquipmentMaterials materials, Rarity rarity, uint8 level) internal {
-        armors.push(
-            Armor({materials: materials, rarity: rarity, level: level, defense: calDefenseForArmor(rarity, level)})
+    function pushEquipmentArmor(Equipment[] storage arr, EquipmentMaterials materials, Rarity rarity, uint8 level)
+        internal
+    {
+        arr.push(
+            Equipment({
+                etype: EquipmentType.Armor,
+                materials: materials,
+                rarity: rarity,
+                level: level,
+                attack: 0,
+                defense: calDefenseForArmor(rarity, level),
+                crit: 0,
+                critChance: 0,
+                blockChance: 0,
+                stunChance: 0
+            })
         );
     }
 
-    function pushShield(Shield[] storage shields, Rarity rarity, uint8 level) internal {
+    function pushEquipmentShield(Equipment[] storage arr, Rarity rarity, uint8 level) internal {
         (,, uint16 blockChance, uint16 stunChance) = calSecondAttributesDirectly(rarity);
-        shields.push(
-            Shield({
+        arr.push(
+            Equipment({
+                etype: EquipmentType.Shield,
+                materials: EquipmentMaterials.Wooden,
                 rarity: rarity,
                 level: level,
+                attack: 0,
                 defense: calDefenseForShield(rarity, level),
+                crit: 0,
+                critChance: 0,
                 blockChance: blockChance,
                 stunChance: stunChance
             })
@@ -265,13 +281,6 @@ library Property {
         } else {
             typ = ItemType.Empty;
         }
-    }
-
-    function typeFromEquipmentId(uint256 id) internal pure returns (EquipmentType ype) {
-        if (id >= 1e9 && id < 2e9) return EquipmentType.Sword;
-        if (id >= 2e9 && id < 3e9) return EquipmentType.Armor;
-        if (id >= 3e9 && id < 4e9) return EquipmentType.Shield;
-        revert WrongEquipmentId();
     }
 
     function equipmentCost(uint8 level, Rarity rarity) internal pure returns (uint256) {

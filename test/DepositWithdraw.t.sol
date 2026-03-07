@@ -1,54 +1,35 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {RouterTestBase} from "./RouterTestBase.sol";
 import {IGameLogic} from "../src/interfaces/IGameLogic.sol";
-import {IGameToken} from "../src/interfaces/IGameToken.sol";
-import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
-import {GameToken} from "../src/GameToken.sol";
-import {GameAssets} from "../src/GameAssets.sol";
-import {GameV0} from "../src/GameV0.sol";
 import {Property} from "../src/libraries/Property.sol";
 
 bytes32 constant PERMIT_TYPEHASH =
     keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
 /**
- * Unit tests for GameLogic.deposit, GameLogic.depositWithPermit, and GameLogic.withdraw.
+ * Unit tests for Game.deposit, depositWithPermit, withdraw.
+ * User approves Game proxy for token; tokens are held by Game proxy.
  */
-contract DepositWithdrawTest is Test {
-    IGameLogic gameLogic;
-    IGameToken gameToken;
-    IGameAssets gameAssets;
-
-    address game;
+contract DepositWithdrawTest is RouterTestBase {
+    address game; // game proxy address (for mint prank and token holder)
     address user;
 
-    /// Signer for depositWithPermit tests (must have known private key to sign EIP-712)
     uint256 internal signerPk = 1;
     address internal signer;
 
     function setUp() public {
         user = address(0x1234);
         signer = vm.addr(signerPk);
-
-        GameToken token = new GameToken("Tower Top Token", "TOP");
-        GameAssets assets = new GameAssets("");
-        GameV0 gameV0 = new GameV0(address(token), address(assets));
-        game = address(gameV0);
-
-        token.setProxy(game);
-        assets.setProxy(game);
-
-        gameLogic = IGameLogic(game);
-        gameToken = IGameToken(address(token));
-        gameAssets = IGameAssets(address(assets));
+        deployRouterStack();
+        game = address(gameLogic);
     }
 
     function test_deposit_revertWhenAmountLessThan1Ether() public {
         _giveUserToken(1 ether);
         vm.startPrank(user);
-        gameToken.approve(game, 1 ether);
+        gameToken.approve(address(gameLogic), 1 ether);
         vm.expectRevert(IGameLogic.AmountAtLeast1e18.selector);
         gameLogic.deposit(1 ether - 1);
         vm.stopPrank();
@@ -58,12 +39,12 @@ contract DepositWithdrawTest is Test {
         uint256 amount = 2 ether;
         _giveUserToken(amount);
         vm.startPrank(user);
-        gameToken.approve(game, amount);
+        gameToken.approve(address(gameLogic), amount);
         gameLogic.deposit(amount);
         vm.stopPrank();
 
         assertEq(gameAssets.balanceOf(user, Property.COIN_ID), amount * 10, "user Coin balance");
-        assertEq(gameToken.balanceOf(game), amount, "contract token balance");
+        assertEq(gameToken.balanceOf(address(gameLogic)), amount, "Game proxy token balance");
         assertEq(gameToken.balanceOf(user), 0, "user token spent");
     }
 
@@ -74,12 +55,9 @@ contract DepositWithdrawTest is Test {
     }
 
     function test_withdraw_revertWhenInsufficientLiquidity() public {
-        // User has Coin (e.g. from born + some mint) but contract has no token to pay out.
-        // Give user Coin by minting directly from assets (as game).
-        vm.prank(game);
+        vm.prank(address(gameLogic));
         gameAssets.mint(user, Property.COIN_ID, 10 ether, "");
-        // Contract has 0 token.
-        assertEq(gameToken.balanceOf(game), 0);
+        assertEq(gameToken.balanceOf(address(gameLogic)), 0);
 
         vm.prank(user);
         vm.expectRevert(IGameLogic.InsufficientERC20.selector);
@@ -90,31 +68,33 @@ contract DepositWithdrawTest is Test {
         uint256 depositAmount = 10 ether;
         _giveUserToken(depositAmount);
         vm.startPrank(user);
-        gameToken.approve(game, depositAmount);
+        gameToken.approve(address(gameLogic), depositAmount);
         gameLogic.deposit(depositAmount);
         vm.stopPrank();
 
         uint256 coinBalance = depositAmount * 10;
-        uint256 withdrawCoin = 10 ether; // 10 ether Coin -> 1 ether token
+        uint256 withdrawCoin = 10 ether;
         vm.prank(user);
         gameLogic.withdraw(withdrawCoin);
 
-        uint256 expectedToken = withdrawCoin / 10; // 1 ether
-        uint256 expectedBurn = expectedToken / 20; // 5% = 0.05 ether
-        uint256 expectedToUser = expectedToken - expectedBurn; // 0.95 ether
+        uint256 expectedToken = withdrawCoin / 10;
+        uint256 expectedBurn = expectedToken / 20;
+        uint256 expectedToUser = expectedToken - expectedBurn;
 
         assertEq(gameToken.balanceOf(user), expectedToUser, "user receives 95%");
         assertEq(gameAssets.balanceOf(user, Property.COIN_ID), coinBalance - withdrawCoin, "Coin deducted");
-        assertEq(gameToken.balanceOf(game), depositAmount - expectedToken, "contract balance decreased by 1 ether");
+        assertEq(
+            gameToken.balanceOf(address(gameLogic)),
+            depositAmount - expectedToken,
+            "Game proxy balance decreased"
+        );
         assertEq(gameToken.totalSupply(), depositAmount - expectedBurn, "5% burned");
     }
-
-    // ---------- depositWithPermit ----------
 
     function test_depositWithPermit_revertWhenAmountLessThan1Ether() public {
         uint256 amount = 1 ether - 1;
         _giveUserTokenTo(signer, 1 ether);
-        (uint256 deadline, uint8 v, bytes32 r, bytes32 s) = _signPermit(signer, game, amount);
+        (uint256 deadline, uint8 v, bytes32 r, bytes32 s) = _signPermit(signer, address(gameLogic), amount);
         vm.prank(signer);
         vm.expectRevert(IGameLogic.AmountAtLeast1e18.selector);
         gameLogic.depositWithPermit(amount, deadline, v, r, s);
@@ -123,13 +103,13 @@ contract DepositWithdrawTest is Test {
     function test_depositWithPermit_success() public {
         uint256 amount = 2 ether;
         _giveUserTokenTo(signer, amount);
-        (uint256 deadline, uint8 v, bytes32 r, bytes32 s) = _signPermit(signer, game, amount);
+        (uint256 deadline, uint8 v, bytes32 r, bytes32 s) = _signPermit(signer, address(gameLogic), amount);
 
         vm.prank(signer);
         gameLogic.depositWithPermit(amount, deadline, v, r, s);
 
         assertEq(gameAssets.balanceOf(signer, Property.COIN_ID), amount * 10, "signer Coin balance");
-        assertEq(gameToken.balanceOf(game), amount, "contract token balance");
+        assertEq(gameToken.balanceOf(address(gameLogic)), amount, "Game proxy token balance");
         assertEq(gameToken.balanceOf(signer), 0, "signer token spent");
     }
 
@@ -137,21 +117,39 @@ contract DepositWithdrawTest is Test {
         uint256 amount = 2 ether;
         _giveUserTokenTo(signer, amount);
         uint256 pastDeadline = block.timestamp - 1;
-        (uint8 v, bytes32 r, bytes32 s) = _signPermitRaw(signer, game, amount, gameToken.nonces(signer), pastDeadline);
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermitRaw(signer, address(gameLogic), amount, gameToken.nonces(signer), pastDeadline);
 
         vm.prank(signer);
-        vm.expectRevert(); // ERC2612ExpiredSignature from token
+        vm.expectRevert();
         gameLogic.depositWithPermit(amount, pastDeadline, v, r, s);
     }
 
     function test_depositWithPermit_revertWhenInvalidSignature() public {
         uint256 amount = 2 ether;
         _giveUserTokenTo(signer, amount);
-        (uint256 deadline, uint8 v, bytes32 r, bytes32 s) = _signPermit(signer, game, amount);
-        // Tamper signature
+        (uint256 deadline, uint8 v, bytes32 r, bytes32 s) = _signPermit(signer, address(gameLogic), amount);
         vm.prank(signer);
-        vm.expectRevert(); // ERC2612InvalidSigner or wrong recovery
+        vm.expectRevert();
         gameLogic.depositWithPermit(amount, deadline, v, r, bytes32(uint256(s) + 1));
+    }
+
+    function test_depositThenWithdraw_roundTrip() public {
+        uint256 amount = 100 ether;
+        _giveUserToken(amount);
+        vm.startPrank(user);
+        gameToken.approve(address(gameLogic), amount);
+        gameLogic.deposit(amount);
+        vm.stopPrank();
+
+        uint256 coinBalance = gameAssets.balanceOf(user, Property.COIN_ID);
+        vm.prank(user);
+        gameLogic.withdraw(coinBalance);
+
+        uint256 tokenBack = coinBalance / 10;
+        uint256 burnAmount = tokenBack / 20;
+        assertEq(gameToken.balanceOf(user), amount - burnAmount, "user has initial minus 5% of withdrawn");
+        assertEq(gameAssets.balanceOf(user, Property.COIN_ID), 0, "no Coin left");
     }
 
     function _signPermit(address ownerAddr, address spenderAddr, uint256 value)
@@ -174,25 +172,6 @@ contract DepositWithdrawTest is Test {
         bytes32 domainSeparator = gameToken.DOMAIN_SEPARATOR();
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
         return vm.sign(signerPk, digest);
-    }
-
-    function test_depositThenWithdraw_roundTrip() public {
-        uint256 amount = 100 ether;
-        _giveUserToken(amount);
-        vm.startPrank(user);
-        gameToken.approve(game, amount);
-        gameLogic.deposit(amount);
-        vm.stopPrank();
-
-        uint256 coinBalance = gameAssets.balanceOf(user, Property.COIN_ID);
-        uint256 withdrawCoin = coinBalance; // withdraw all Coin
-        vm.prank(user);
-        gameLogic.withdraw(withdrawCoin);
-
-        uint256 tokenBack = withdrawCoin / 10;
-        uint256 burnAmount = tokenBack / 20;
-        assertEq(gameToken.balanceOf(user), amount - burnAmount, "user has initial minus 5% of withdrawn");
-        assertEq(gameAssets.balanceOf(user, Property.COIN_ID), 0, "no Coin left");
     }
 
     function _giveUserToken(uint256 amount) internal {

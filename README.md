@@ -26,34 +26,38 @@ The player starts on floor 1 and climbs up to floor 100 by defeating monsters, c
 
 ### Documentation
 
-- **[Game design document 游戏设计文档](docs/GAME_DESIGN.md)** – Full game design (mechanics, formulas, economy, combat, floors, shop/forge). Includes technical notes on ERC1967 proxy, UUPS upgrades, and contract architecture.
+- **[Game design document 游戏设计文档](docs/GAME_DESIGN.md)** – Full game design (mechanics, formulas, economy, combat, floors, shop/forge). Includes technical notes on TransparentUpgradeableProxy, Game/Hero/Inventory split, and contract architecture.
 
 ---
 
 ## Contracts & Architecture
 
-### Entry points
+The game uses **three proxies** (Game, Hero, Inventory), each with logic/storage separation. Users interact only with the **Game proxy**; Hero and Inventory are callable only by the Game proxy (`setPermit`).
+
+### Entry point (behind proxy)
 
 | Contract   | Path              | Description |
 |-----------|-------------------|-------------|
-| **GameV0** | `src/GameV0.sol`  | Non‑upgradeable entry: deploy directly with `GameV0(token, assets)`. Use for testnets or when upgrades are not needed. |
-| **GameV1** | `src/GameV1.sol`  | UUPS‑upgradeable logic: used as implementation behind an ERC1967 proxy. Handles initialization, upgrade authorization, and two‑step ownership. |
+| **GameV1** | `src/GameV1.sol`  | Game logic implementation: inherits GameLogic, `initialize(heroLogic, inventoryLogic, gameToken, gameAssets)`. Deployed as implementation behind a TransparentUpgradeableProxy; proxy admin can upgrade via `upgradeToAndCall`. |
 
 ### Core contracts
 
 | Contract       | Path                | Description |
 |----------------|---------------------|-------------|
-| **GameLogic**  | `src/GameLogic.sol` | Abstract contract: combat, rewards, floors, shop, forge, deposit/withdraw. Inherited by GameV0 / GameV1. |
-| **GameStorage**| `src/GameStorage.sol`| Abstract contract: storage layout for players, floors, equipment, bags, warehouse. Inherited by GameLogic. |
-| **GameAssets** | `src/GameAssets.sol`| ERC1155: equipment, items, and gold (multi‑token IDs). Only the game contract (proxy or GameV0) can mint/burn after `setProxy`. |
-| **GameToken**  | `src/GameToken.sol` | ERC20 “Tower Top Token” (TOP): deposit into game, in‑game Coin mint. Only the game contract can mint/burn after `setProxy`. |
-| **ERC1967Proxy** | `src/ERC1967Proxy.sol` | Minimal ERC1967 proxy used to point to GameV1 implementation. |
+| **GameLogic**  | `src/GameLogic.sol` | Abstract: single entry for born, battle, nextFloor, buy, equip, deposit/withdraw, etc.; delegates to HeroLogic and InventoryLogic, and mints/burns token and assets. |
+| **HeroLogic** / **HeroV1** | `src/HeroLogic.sol`, `src/HeroV1.sol` | Player state, floor state, equipped slots, combat. HeroV1 is the logic contract behind the Hero proxy; only the Game proxy may call it after `setPermit(gameProxy)`. |
+| **InventoryLogic** / **InventoryV1** | `src/InventoryLogic.sol`, `src/InventoryV1.sol` | Bag, warehouse, equipment/items, shop and forge logic. InventoryV1 is behind the Inventory proxy; only the Game proxy may call it. |
+| **TransparentUpgradeableProxy** | `src/TransparentUpgradeableProxy.sol` | ERC1967 transparent proxy used for Game, Hero, and Inventory. Admin calls `upgradeToAndCall` on the proxy to upgrade the implementation. |
+| **GameAssets** | `src/GameAssets.sol`| ERC1155: equipment, items, gold. Only the Game proxy can mint/burn after `setProxy(gameProxy)`. |
+| **GameToken**  | `src/GameToken.sol` | ERC20 “Tower Top Token” (TOP). Only the Game proxy can mint/burn after `setProxy(gameProxy)`. |
 
 ### Interfaces
 
 | Interface     | Path                        | Description |
 |---------------|-----------------------------|-------------|
 | **IGameLogic**| `src/interfaces/IGameLogic.sol` | External game API (born, battle, nextFloor, buy, equip, deposit, etc.) and custom errors. |
+| **IHeroLogic**| `src/interfaces/IHeroLogic.sol` | Hero module: getPlayer, getFloor, getEquippedIds, setPermit; used by Game and tests. |
+| **IInventoryLogic**| `src/interfaces/IInventoryLogic.sol` | Inventory module: getBag, getWarehouse, getEquipment, setPermit; used by Game. |
 | **IGameToken**| `src/interfaces/IGameToken.sol` | Token operations and permit; used by game for mint/burn. |
 | **IGameAssets**| `src/interfaces/IGameAssets.sol`| Asset mint/burn; used by game. |
 
@@ -82,25 +86,26 @@ The player starts on floor 1 and climbs up to floor 100 by defeating monsters, c
 
 | Script | Description |
 |--------|-------------|
-| **DeployGameV0** | `script/DeployGameV0.s.sol` – Deploy GameToken, GameAssets, GameV0; then `setProxy` on token and assets to GameV0. Env: `TOKEN_PRIVATE_KEY`, `ASSET_PRIVATE_KEY`, `GAME_V0_PRIVATE_KEY`. |
-| **DeployGameV1Proxy** | `script/DeployGameV1Proxy.s.sol` – Deploy GameToken, GameAssets, GameV1, ERC1967Proxy; initialize proxy with `GameV1.initialize(token, assets, owner)`; then `setProxy` to proxy address. Env: `OWNER_ADDRESS`, `TOKEN_PRIVATE_KEY`, `ASSET_PRIVATE_KEY`, `GAME_V1_PRIVATE_KEY`, `PROXY_PRIVATE_KEY`. |
+| **DeployGame** | `script/DeployGame.s.sol` – Deploy GameToken, GameAssets, GameV1, HeroV1, InventoryV1 and their TransparentUpgradeableProxies; initialize and wire `setPermit` / `setProxy` so the game proxy is the single entry. |
 
 ---
 
 ## Tests
 
-Tests use **GameV0** (no proxy). All under `test/`:
+Tests use **RouterTestBase**, which deploys the full stack: Game, Hero, and Inventory proxies plus GameToken and GameAssets. All under `test/`:
 
 | Test file | Coverage |
 |-----------|----------|
 | `Born.t.sol` | Player creation (born), initial state, floor 0. |
-| `BattleGameLogic.t.sol` | Combat, damage, level‑up, BOSS, death. |
+| `Battle.t.sol` | Combat, damage, level‑up, BOSS, death, not‑registered reverts. |
 | `Buy.t.sol` | Shop purchase (items, equipment), reverts. |
 | `DepositWithdraw.t.sol` | Deposit, withdraw, 5% burn, depositWithPermit. |
 | `EquipUnequip.t.sol` | Equip / unequip equipment and puppet. |
 | `FullHeal.t.sol` | Full‑heal cost and reverts. |
 | `UseItems.t.sol` | Use items (potions, books), slot rules. |
-| `GameStorage.t.sol` | Storage helpers, bags, warehouse, capacity. |
+| `Circle.t.sol` | Circle (rebirth at floor 100), reverts. |
+| `TowerTopSimulation.t.sol` | End‑to‑end simulation: one player climbs and fights until cap or level 100. |
+| `GameInvariant.t.sol` | Invariant: player level and floor index bounded. |
 
 Run: `forge test`
 
@@ -156,18 +161,10 @@ Install Foundry by following the official guide:
 
 - **Scripts / Deployment**
 
-  Example: deploy the game with UUPS proxy (set env vars `OWNER_ADDRESS`, `TOKEN_PRIVATE_KEY`, etc., or use `--private-key` for a single key):
+  Deploy script: `script/DeployGame.s.sol` deploys GameToken, GameAssets, GameV1, HeroV1, InventoryV1 and their TransparentUpgradeableProxies, wires `setPermit` and `setProxy`, then the game proxy is the single entry for users. Set env vars (e.g. `OWNER_ADDRESS`, deployer keys) or use `--private-key` as needed:
 
   ```shell
-  forge script script/DeployGameV1Proxy.s.sol:DeployGameV1Proxy \
-    --rpc-url <your_rpc_url> \
-    --broadcast
-  ```
-
-  For a direct deploy without proxy (GameV0):
-
-  ```shell
-  forge script script/DeployGameV0.s.sol:DeployGameV0 --rpc-url <your_rpc_url> --broadcast
+  forge script script/DeployGame.s.sol --rpc-url <your_rpc_url> --broadcast
   ```
 
 - **Cast Utility**

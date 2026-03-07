@@ -97,8 +97,8 @@ interface IGameLogic {
 
     /**
      * @notice buy one item or equipment from current floor's shop
-     * @param typeIndex 0: item (book/potion), 1: sword, 2: shield, 3: armor
-     * @param slot index of the item or equipment in the shop list
+     * @param typeIndex 0: item (book/potion), 1: equipment (sword/shield/armor in shop.equipments)
+     * @param slot index in shop.items (typeIndex=0) or shop.equipments (typeIndex=1)
      */
     function buy(uint256 typeIndex, uint256 slot) external;
 

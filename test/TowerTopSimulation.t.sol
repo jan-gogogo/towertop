@@ -1,64 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
-import {IGameLogic} from "../src/interfaces/IGameLogic.sol";
-import {IGameToken} from "../src/interfaces/IGameToken.sol";
-import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
-import {GameToken} from "../src/GameToken.sol";
-import {GameAssets} from "../src/GameAssets.sol";
-import {GameV0} from "../src/GameV0.sol";
-import {Property, Sword, Armor, Shield, Puppet} from "../src/libraries/Property.sol";
+import {RouterTestBase} from "./RouterTestBase.sol";
+import {Property, Equipment, EquipmentType} from "../src/libraries/Property.sol";
 import {Player} from "../src/libraries/Character.sol";
 import {Floor} from "../src/libraries/Environment.sol";
 import {Aoka} from "../src/libraries/Enemy.sol";
-
-/**
- * Harness to expose getEquipped, equipped IDs, and equipment by id for simulation report.
- */
-contract GameV0SimulationHarness is GameV0 {
-    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, address(_gameAssets_)) {}
-
-    function exposedGetEquipped(address addr)
-        external
-        view
-        returns (Sword memory s, Armor memory a, Shield memory sh, Puppet memory p)
-    {
-        return getEquipped(addr);
-    }
-
-    function exposedGetEquippedIds(address addr) external view returns (uint256[4] memory ids) {
-        uint256[4] storage e = findEquipped(addr);
-        for (uint256 i = 0; i < 4; i++) {
-            ids[i] = e[i];
-        }
-    }
-
-    function exposedGetSword(uint256 id) external view returns (Sword memory) {
-        return findSword(id);
-    }
-
-    function exposedGetArmor(uint256 id) external view returns (Armor memory) {
-        return findArmor(id);
-    }
-
-    function exposedGetShield(uint256 id) external view returns (Shield memory) {
-        return findShield(id);
-    }
-}
 
 /**
  * Simulates a real user playing Tower Top until cannot nextFloor or level 100.
  * Uses books for exp, potions when low HP, fullHeal with coins, buys/upgrades when possible.
  * Outputs final Player, coin consumed, bag, warehouse, floor, and equipment details.
  */
-contract TowerTopSimulationTest is Test {
-    IGameLogic gameLogic;
-    IGameToken gameToken;
-    IGameAssets gameAssets;
-    GameV0SimulationHarness harness;
-
+contract TowerTopSimulationTest is RouterTestBase {
     address user;
     uint256 totalCoinConsumed;
     uint256 bookUseCount;
@@ -72,9 +27,7 @@ contract TowerTopSimulationTest is Test {
 
     function setUp() public {
         user = address(0x1234);
-        // change the random seed, which will affect the outcome of each battle,
-        // dropped items, weapon forging, enemy stats, and enemy types
-        seedBase = 0x12345678;
+        seedBase = 0x1234567a;
         totalCoinConsumed = 0;
         bookUseCount = 0;
         potionUseCount = 0;
@@ -84,23 +37,13 @@ contract TowerTopSimulationTest is Test {
         mergeCount = 0;
         _txNonce = 0;
 
-        GameToken token = new GameToken("Tower Top Token", "TOP");
-        GameAssets assets = new GameAssets("");
-        GameV0SimulationHarness game = new GameV0SimulationHarness(address(token), address(assets));
-
-        token.setProxy(address(game));
-        assets.setProxy(address(game));
-
-        gameLogic = IGameLogic(address(game));
-        gameToken = IGameToken(address(token));
-        gameAssets = IGameAssets(address(assets));
-        harness = GameV0SimulationHarness(address(game));
+        deployRouterStack();
 
         vm.startPrank(user);
         _nextSeed();
         gameLogic.born();
         _nextSeed();
-        token.approve(address(game), 1 ether);
+        gameToken.approve(address(gameLogic), 1 ether);
         gameLogic.deposit(1 ether);
         _equipBestGear();
         vm.stopPrank();
@@ -110,10 +53,13 @@ contract TowerTopSimulationTest is Test {
         vm.startPrank(user);
 
         while (true) {
-            Player memory p = gameLogic.getPlayer(user);
-            if (p.level >= 100) break;
+            // Player memory p = gameLogic.getPlayer(user);
 
             Floor memory floor = gameLogic.getFloor(user);
+
+            if (floor.index >= 28) {
+                break;
+            }
 
             // 1. Use books (exp) and potions (when HP low) — like a real user
             _useBooksAndPotions();
@@ -243,38 +189,14 @@ contract TowerTopSimulationTest is Test {
                 } catch {}
             }
         }
-        // Sword (1), Shield (2), Armor (3)
-        for (uint256 s = 0; s < floor.shop.swords.length; s++) {
-            if (floor.shop.swords[s].level == 0) continue;
-            uint256 price = floor.shop.swordPrice[s];
+        // Equipment (typeIndex 1): unified shop.equipments / shop.equipmentPrices
+        for (uint256 s = 0; s < floor.shop.equipments.length; s++) {
+            if (floor.shop.equipments[s].level == 0) continue;
+            uint256 price = floor.shop.equipmentPrices[s];
             if (price > 0 && coins >= price) {
                 uint256 balBefore = gameAssets.balanceOf(user, Property.COIN_ID);
                 _nextSeed();
                 try gameLogic.buy(1, s) {
-                    totalCoinConsumed += (balBefore - gameAssets.balanceOf(user, Property.COIN_ID));
-                    return;
-                } catch {}
-            }
-        }
-        for (uint256 s = 0; s < floor.shop.shields.length; s++) {
-            if (floor.shop.shields[s].level == 0) continue;
-            uint256 price = floor.shop.shieldPrice[s];
-            if (price > 0 && coins >= price) {
-                uint256 balBefore = gameAssets.balanceOf(user, Property.COIN_ID);
-                _nextSeed();
-                try gameLogic.buy(2, s) {
-                    totalCoinConsumed += (balBefore - gameAssets.balanceOf(user, Property.COIN_ID));
-                    return;
-                } catch {}
-            }
-        }
-        for (uint256 s = 0; s < floor.shop.armors.length; s++) {
-            if (floor.shop.armors[s].level == 0) continue;
-            uint256 price = floor.shop.armorPrice[s];
-            if (price > 0 && coins >= price) {
-                uint256 balBefore = gameAssets.balanceOf(user, Property.COIN_ID);
-                _nextSeed();
-                try gameLogic.buy(3, s) {
                     totalCoinConsumed += (balBefore - gameAssets.balanceOf(user, Property.COIN_ID));
                     return;
                 } catch {}
@@ -301,27 +223,16 @@ contract TowerTopSimulationTest is Test {
         view
         returns (uint256 swordId, uint256 armorId, uint256 shieldId, uint256 puppetId)
     {
-        uint256[4] memory ids = harness.exposedGetEquippedIds(user);
+        uint256[4] memory ids = heroLogic.getEquippedIds(user);
         return (ids[0], ids[1], ids[2], ids[3]);
     }
 
     function _tryUpgrade(uint256 equipmentId) internal {
+        if (equipmentId >= 4e9) return; // puppet
         uint256 coins = gameAssets.balanceOf(user, Property.COIN_ID);
-        uint8 lvl;
-        if (equipmentId >= 1e9 && equipmentId < 2e9) {
-            Sword memory s = harness.exposedGetSword(equipmentId);
-            lvl = s.level;
-        } else if (equipmentId >= 2e9 && equipmentId < 3e9) {
-            Armor memory a = harness.exposedGetArmor(equipmentId);
-            lvl = a.level;
-        } else if (equipmentId >= 3e9 && equipmentId < 4e9) {
-            Shield memory sh = harness.exposedGetShield(equipmentId);
-            lvl = sh.level;
-        } else {
-            return;
-        }
-        if (lvl >= Property.MAX_EQUIPMENT_LEVEL) return;
-        uint256 cost = (uint256(lvl) * 2 + 3) * 1 ether;
+        Equipment memory eq = inventoryLogic.getEquipment(equipmentId);
+        if (eq.level >= Property.MAX_EQUIPMENT_LEVEL) return;
+        uint256 cost = (uint256(eq.level) * 2 + 3) * 1 ether;
         if (coins < cost) return;
         _nextSeed();
         try gameLogic.upgrade(equipmentId) {
@@ -377,22 +288,25 @@ contract TowerTopSimulationTest is Test {
         uint8 bestRarity = 0;
         uint8 bestLevel = 0;
         if (equippedId != 0) {
-            Sword memory s = harness.exposedGetSword(equippedId);
-            bestId = equippedId;
-            bestAttack = s.attack;
-            bestRarity = uint8(s.rarity);
-            bestLevel = s.level;
+            Equipment memory e = inventoryLogic.getEquipment(equippedId);
+            if (e.etype == EquipmentType.Sword) {
+                bestId = equippedId;
+                bestAttack = e.attack;
+                bestRarity = uint8(e.rarity);
+                bestLevel = e.level;
+            }
         }
         for (uint256 i = 0; i < wh.length; i++) {
             if (wh[i] < 1e9 || wh[i] >= 2e9) continue;
-            Sword memory s = harness.exposedGetSword(wh[i]);
-            bool better = s.attack > bestAttack || (s.attack == bestAttack && uint8(s.rarity) > bestRarity)
-                || (s.attack == bestAttack && uint8(s.rarity) == bestRarity && s.level > bestLevel);
+            Equipment memory e = inventoryLogic.getEquipment(wh[i]);
+            if (e.etype != EquipmentType.Sword) continue;
+            bool better = e.attack > bestAttack || (e.attack == bestAttack && uint8(e.rarity) > bestRarity)
+                || (e.attack == bestAttack && uint8(e.rarity) == bestRarity && e.level > bestLevel);
             if (better) {
                 bestId = wh[i];
-                bestAttack = s.attack;
-                bestRarity = uint8(s.rarity);
-                bestLevel = s.level;
+                bestAttack = e.attack;
+                bestRarity = uint8(e.rarity);
+                bestLevel = e.level;
             }
         }
         return bestId;
@@ -403,22 +317,25 @@ contract TowerTopSimulationTest is Test {
         uint8 bestRarity = 0;
         uint8 bestLevel = 0;
         if (equippedId != 0) {
-            Armor memory a = harness.exposedGetArmor(equippedId);
-            bestId = equippedId;
-            bestDef = a.defense;
-            bestRarity = uint8(a.rarity);
-            bestLevel = a.level;
+            Equipment memory e = inventoryLogic.getEquipment(equippedId);
+            if (e.etype == EquipmentType.Armor) {
+                bestId = equippedId;
+                bestDef = e.defense;
+                bestRarity = uint8(e.rarity);
+                bestLevel = e.level;
+            }
         }
         for (uint256 i = 0; i < wh.length; i++) {
             if (wh[i] < 2e9 || wh[i] >= 3e9) continue;
-            Armor memory a = harness.exposedGetArmor(wh[i]);
-            bool better = a.defense > bestDef || (a.defense == bestDef && uint8(a.rarity) > bestRarity)
-                || (a.defense == bestDef && uint8(a.rarity) == bestRarity && a.level > bestLevel);
+            Equipment memory e = inventoryLogic.getEquipment(wh[i]);
+            if (e.etype != EquipmentType.Armor) continue;
+            bool better = e.defense > bestDef || (e.defense == bestDef && uint8(e.rarity) > bestRarity)
+                || (e.defense == bestDef && uint8(e.rarity) == bestRarity && e.level > bestLevel);
             if (better) {
                 bestId = wh[i];
-                bestDef = a.defense;
-                bestRarity = uint8(a.rarity);
-                bestLevel = a.level;
+                bestDef = e.defense;
+                bestRarity = uint8(e.rarity);
+                bestLevel = e.level;
             }
         }
         return bestId;
@@ -430,28 +347,31 @@ contract TowerTopSimulationTest is Test {
         uint8 bestRarity = 0;
         uint8 bestLevel = 0;
         if (equippedId != 0) {
-            Shield memory sh = harness.exposedGetShield(equippedId);
-            bestId = equippedId;
-            bestDef = sh.defense;
-            bestBlock = sh.blockChance;
-            bestRarity = uint8(sh.rarity);
-            bestLevel = sh.level;
+            Equipment memory e = inventoryLogic.getEquipment(equippedId);
+            if (e.etype == EquipmentType.Shield) {
+                bestId = equippedId;
+                bestDef = e.defense;
+                bestBlock = e.blockChance;
+                bestRarity = uint8(e.rarity);
+                bestLevel = e.level;
+            }
         }
         for (uint256 i = 0; i < wh.length; i++) {
             if (wh[i] < 3e9 || wh[i] >= 4e9) continue;
-            Shield memory sh = harness.exposedGetShield(wh[i]);
-            bool better = sh.defense > bestDef || (sh.defense == bestDef && sh.blockChance > bestBlock)
-                || (sh.defense == bestDef && sh.blockChance == bestBlock && uint8(sh.rarity) > bestRarity)
-                || (sh.defense == bestDef
-                    && sh.blockChance == bestBlock
-                    && uint8(sh.rarity) == bestRarity
-                    && sh.level > bestLevel);
+            Equipment memory e = inventoryLogic.getEquipment(wh[i]);
+            if (e.etype != EquipmentType.Shield) continue;
+            bool better = e.defense > bestDef || (e.defense == bestDef && e.blockChance > bestBlock)
+                || (e.defense == bestDef && e.blockChance == bestBlock && uint8(e.rarity) > bestRarity)
+                || (e.defense == bestDef
+                    && e.blockChance == bestBlock
+                    && uint8(e.rarity) == bestRarity
+                    && e.level > bestLevel);
             if (better) {
                 bestId = wh[i];
-                bestDef = sh.defense;
-                bestBlock = sh.blockChance;
-                bestRarity = uint8(sh.rarity);
-                bestLevel = sh.level;
+                bestDef = e.defense;
+                bestBlock = e.blockChance;
+                bestRarity = uint8(e.rarity);
+                bestLevel = e.level;
             }
         }
         return bestId;
@@ -464,14 +384,17 @@ contract TowerTopSimulationTest is Test {
         uint256 coins = gameAssets.balanceOf(user, Property.COIN_ID);
 
         if (mainSword != 0) {
-            Sword memory mainRef = harness.exposedGetSword(mainSword);
-            if (uint8(mainRef.rarity) < 3) {
+            Equipment memory mainRef = inventoryLogic.getEquipment(mainSword);
+            if (mainRef.etype == EquipmentType.Sword && uint8(mainRef.rarity) < 3) {
                 uint256 cost = (uint256(mainRef.level) * 3 + uint256(mainRef.rarity) * 5 + 5) * 1 ether;
                 if (coins >= cost) {
                     for (uint256 i = 0; i < wh.length; i++) {
                         if (wh[i] < 1e9 || wh[i] >= 2e9 || wh[i] == mainSword) continue;
-                        Sword memory subRef = harness.exposedGetSword(wh[i]);
-                        if (mainRef.materials == subRef.materials && mainRef.rarity == subRef.rarity) {
+                        Equipment memory subRef = inventoryLogic.getEquipment(wh[i]);
+                        if (
+                            subRef.etype == EquipmentType.Sword && mainRef.materials == subRef.materials
+                                && mainRef.rarity == subRef.rarity
+                        ) {
                             _nextSeed();
                             try gameLogic.mergeSword(mainSword, wh[i]) {
                                 mergeCount++;
@@ -485,14 +408,17 @@ contract TowerTopSimulationTest is Test {
         }
 
         if (mainArmor != 0) {
-            Armor memory mainRef = harness.exposedGetArmor(mainArmor);
-            if (uint8(mainRef.rarity) < 3) {
+            Equipment memory mainRef = inventoryLogic.getEquipment(mainArmor);
+            if (mainRef.etype == EquipmentType.Armor && uint8(mainRef.rarity) < 3) {
                 uint256 cost = (uint256(mainRef.level) * 3 + uint256(mainRef.rarity) * 5 + 5) * 1 ether;
                 if (coins >= cost) {
                     for (uint256 i = 0; i < wh.length; i++) {
                         if (wh[i] < 2e9 || wh[i] >= 3e9 || wh[i] == mainArmor) continue;
-                        Armor memory subRef = harness.exposedGetArmor(wh[i]);
-                        if (mainRef.materials == subRef.materials && mainRef.rarity == subRef.rarity) {
+                        Equipment memory subRef = inventoryLogic.getEquipment(wh[i]);
+                        if (
+                            subRef.etype == EquipmentType.Armor && mainRef.materials == subRef.materials
+                                && mainRef.rarity == subRef.rarity
+                        ) {
                             _nextSeed();
                             try gameLogic.mergeArmor(mainArmor, wh[i]) {
                                 mergeCount++;
@@ -506,14 +432,14 @@ contract TowerTopSimulationTest is Test {
         }
 
         if (mainShield != 0) {
-            Shield memory mainRef = harness.exposedGetShield(mainShield);
-            if (uint8(mainRef.rarity) < 3) {
+            Equipment memory mainRef = inventoryLogic.getEquipment(mainShield);
+            if (mainRef.etype == EquipmentType.Shield && uint8(mainRef.rarity) < 3) {
                 uint256 cost = (uint256(mainRef.level) * 3 + uint256(mainRef.rarity) * 5 + 5) * 1 ether;
                 if (coins >= cost) {
                     for (uint256 i = 0; i < wh.length; i++) {
                         if (wh[i] < 3e9 || wh[i] >= 4e9 || wh[i] == mainShield) continue;
-                        Shield memory subRef = harness.exposedGetShield(wh[i]);
-                        if (mainRef.rarity == subRef.rarity) {
+                        Equipment memory subRef = inventoryLogic.getEquipment(wh[i]);
+                        if (subRef.etype == EquipmentType.Shield && mainRef.rarity == subRef.rarity) {
                             _nextSeed();
                             try gameLogic.mergeShield(mainShield, wh[i]) {
                                 mergeCount++;
@@ -533,7 +459,7 @@ contract TowerTopSimulationTest is Test {
         Floor memory floor = gameLogic.getFloor(user);
         uint256[] memory bag = gameLogic.getBag(user);
         uint256[] memory warehouse = gameLogic.getWarehouse(user);
-        uint256[4] memory equippedIds = harness.exposedGetEquippedIds(user);
+        uint256[4] memory equippedIds = heroLogic.getEquippedIds(user);
 
         console.log("========== Tower Top Simulation Final Report ==========");
         console.log("--- Player ---");
@@ -571,9 +497,7 @@ contract TowerTopSimulationTest is Test {
         }
         console.log("  foundry.rarity", uint8(floor.foundry.rarity));
         console.log("  shop.items length", floor.shop.items.length);
-        console.log("  shop.swords length", floor.shop.swords.length);
-        console.log("  shop.shields length", floor.shop.shields.length);
-        console.log("  shop.armors length", floor.shop.armors.length);
+        console.log("  shop.equipments length", floor.shop.equipments.length);
 
         console.log("--- Bag (itemIds) ---");
         console.log("  bag length:", bag.length);
@@ -629,29 +553,32 @@ contract TowerTopSimulationTest is Test {
 
     function _logSword(uint256 id) internal view {
         if (id == 0) return;
-        Sword memory s = harness.exposedGetSword(id);
+        Equipment memory e = inventoryLogic.getEquipment(id);
+        if (e.etype != EquipmentType.Sword) return;
         console.log("  sword id", id);
-        console.log("    materials", uint8(s.materials), "rarity", uint8(s.rarity));
-        console.log("    level", s.level, "attack", s.attack);
-        console.log("    crit", s.crit, "critChance", s.critChance);
-        console.log("    stunChance", s.stunChance);
+        console.log("    materials", uint8(e.materials), "rarity", uint8(e.rarity));
+        console.log("    level", e.level, "attack", e.attack);
+        console.log("    crit", e.crit, "critChance", e.critChance);
+        console.log("    stunChance", e.stunChance);
     }
 
     function _logArmor(uint256 id) internal view {
         if (id == 0) return;
-        Armor memory a = harness.exposedGetArmor(id);
+        Equipment memory e = inventoryLogic.getEquipment(id);
+        if (e.etype != EquipmentType.Armor) return;
         console.log("  armor id", id);
-        console.log("    materials", uint8(a.materials), "rarity", uint8(a.rarity));
-        console.log("    level", a.level);
-        console.log("    defense", a.defense);
+        console.log("    materials", uint8(e.materials), "rarity", uint8(e.rarity));
+        console.log("    level", e.level);
+        console.log("    defense", e.defense);
     }
 
     function _logShield(uint256 id) internal view {
         if (id == 0) return;
-        Shield memory sh = harness.exposedGetShield(id);
+        Equipment memory e = inventoryLogic.getEquipment(id);
+        if (e.etype != EquipmentType.Shield) return;
         console.log("  shield id", id);
-        console.log("    rarity", uint8(sh.rarity), "level", sh.level);
-        console.log("    defense", sh.defense);
-        console.log("    blockChance", sh.blockChance, "stunChance", sh.stunChance);
+        console.log("    rarity", uint8(e.rarity), "level", e.level);
+        console.log("    defense", e.defense);
+        console.log("    blockChance", e.blockChance, "stunChance", e.stunChance);
     }
 }

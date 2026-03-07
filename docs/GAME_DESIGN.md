@@ -8,10 +8,10 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 
 ### 技术架构（合约层）：
 
-- **代理模式**：游戏入口使用 **ERC1967** 标准代理（逻辑与存储分离），用户始终与同一代理地址交互，升级时只需更换代理背后的实现地址，玩家状态与资产不受影响。
-- **升级能力**：逻辑合约（GameV1）实现 **UUPS（EIP-1822）**，仅合约 owner 可调用 `upgradeToAndCall` 随时更换游戏逻辑代码，达到升级战斗、锻造、经济等游戏逻辑。
-- **权限与安全**：合约所有权采用 **两步转移（Ownable2Step）**：先 `transferOwnership(newOwner)` 指定新的owner地址，再由新owner地址调用 `acceptOwnership()` 接受请求并完成转移，防止因地址笔误导致控制权永久丢失。
-- **资产与代币**：ERC20 游戏代币与 ERC1155 资产合约均采用「仅代理可操作」的设计（`setProxy` 一次性绑定游戏合约地址），由游戏合约统一负责 mint/burn，保证经济与掉落逻辑仅在受控入口执行。
+- **代理模式**：游戏入口及英雄/背包模块均使用 **TransparentUpgradeableProxy（ERC1967）**，逻辑与存储分离。用户只与**游戏代理**地址交互；Hero、Inventory 仅允许游戏代理调用（`setPermit(gameProxy)`），玩家状态与资产不受影响。
+- **升级能力**：游戏代理由 **proxy admin** 管理，admin 调用代理上的 `upgradeToAndCall(newImplementation, data)` 即可更换 Game 逻辑（GameV1 → GameV2 等）；Hero/Inventory 代理同样可由各自 admin 升级其逻辑合约（HeroV1、InventoryV1）。
+- **权限与安全**：游戏逻辑合约（GameV1）仅负责 `initialize(heroLogic, inventoryLogic, gameToken, gameAssets)`，无自有存储；HeroV1/InventoryV1 通过 `setPermit` 将唯一调用方设为游戏代理，避免被任意地址直接调用。
+- **资产与代币**：ERC20 游戏代币与 ERC1155 资产合约采用「仅游戏代理可操作」设计（`setProxy(gameProxy)` 一次性绑定），由游戏合约统一 mint/burn，保证经济与掉落逻辑仅在受控入口执行。
 
 ------
 **楼层与玩法**
@@ -30,19 +30,22 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 
 | 内容         | 文件路径                              | 主要结构 / 职责                            |
 |--------------|---------------------------------------|-------------------------------------------|
-| 入口合约     | src/GameV1.sol                        | `contract GameV1`：UUPS 可升级逻辑合约入口，只负责初始化与升级授权 |
-| 游戏逻辑     | src/GameLogic.sol                     | `abstract contract GameLogic`：核心游戏逻辑（战斗、楼层、商店、锻造、掉落等） |
-| 存储布局     | src/GameStorage.sol                   | `abstract contract GameStorage`：玩家、楼层、装备等的存储结构与低层读写 |
-| 接口定义     | src/interfaces/IGameLogic.sol         | `interface IGameLogic`：对外暴露的游戏逻辑接口与错误类型 |
+| 入口合约     | src/GameV1.sol                        | `contract GameV1`：游戏逻辑实现，继承 GameLogic，仅负责 `initialize(heroLogic, inventoryLogic, gameToken, gameAssets)`，无存储 |
+| 游戏逻辑     | src/GameLogic.sol                     | `abstract contract GameLogic`：单一入口，将战斗/楼层/商店/锻造等委托给 HeroLogic、InventoryLogic，并管理代币与资产的 mint/burn |
+| 英雄逻辑     | src/HeroLogic.sol, src/HeroV1.sol     | 玩家、楼层、装备槽、战斗调用；HeroV1 为代理背后的逻辑合约，仅允许 `setPermit` 后的游戏代理调用 |
+| 背包逻辑     | src/InventoryLogic.sol, src/InventoryV1.sol | 背包、仓库、装备/物品、商店与锻造；InventoryV1 为代理背后逻辑，仅允许游戏代理调用 |
+| 代理         | src/TransparentUpgradeableProxy.sol   | ERC1967 透明代理，用于 Game / Hero / Inventory，admin 可 `upgradeToAndCall` 更换实现 |
+| 接口定义     | src/interfaces/IGameLogic.sol         | `interface IGameLogic`：对外游戏 API 与错误类型 |
+| 英雄/背包接口 | src/interfaces/IHeroLogic.sol, IInventoryLogic.sol | 玩家与背包模块的只读与受控调用接口 |
 | 玩家         | src/libraries/Character.sol           | `struct Player` 及升级/轮回等辅助函数       |
 | 敌人         | src/libraries/Enemy.sol               | `struct Aoka` 敌人定义与生成逻辑           |
 | 装备与物品   | src/libraries/Property.sol            | 装备/物品结构体、数值公式、价格/掉落相关工具函数 |
 | 楼层与环境   | src/libraries/Environment.sol         | `struct Floor`、`Shop` 等楼层/环境生成逻辑  |
 | 战斗计算     | src/libraries/Battle.sol              | 战斗回合流程、伤害计算、奖励生成等         |
 | 属性枚举     | src/libraries/Attribute.sol           | 稀有度 `enum Rarity` 等基础枚举           |
-| 随机数封装   | src/random/Oracle.sol, src/libraries/Seed.sol | 目前暂时基于 `block.prevrandao` 的随机种子与派生工具，后续可能接入Oracle（如Chainlink或Pyth） |
-| 资产合约     | src/GameAssets.sol                    | ERC1155 资产合约（物品/装备/金币）         |
-| 代币合约     | src/GameToken.sol                     | ERC20 游戏代币（用于兑换游戏内 Coin）      |
+| 随机数封装   | src/random/Randao.sol, src/libraries/Seed.sol | 基于 `block.prevrandao` 的随机种子与派生，后续可接入 Oracle（如Chainlink或Pyth） |
+| 资产合约     | src/GameAssets.sol                    | ERC1155 资产合约（物品/装备/金币），仅游戏代理可 mint/burn |
+| 代币合约     | src/GameToken.sol                     | ERC20 游戏代币（用于兑换游戏内 Coin），仅游戏代理可 mint/burn |
 
 **文档结构索引（章节编号，便于交叉引用）**
 
@@ -203,9 +206,9 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 - 初始（1 级）基础属性（来自合约 `initPlayer`）：  
   - `healthMax = 100`，`health = 100`，`attack = 10`，`defense = 5`。
 - 每次从 level = L 升到 L+1 时，基础属性增量为：  
-  - `healthMax += 20 + (L - 1) * 4`  
-  - `attack += 3 + (L - 1)`  
-  - `defense += 2 + (L - 1)`  
+  - `healthMax += 20`  
+  - `attack += 3`  
+  - `defense += 2`  
   （即等级越高，每次升级增加的数值越大；实际总值为在上述初始值基础上累加。）
 
 暴击/格挡/眩晕由装备提供，见 4.2。
@@ -260,10 +263,10 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 **小怪（非 BOSS）**
 
 - level：`level = min(100, floorIndex + 1)`。
-- health：`health = 12 + (floorIndex * 5) / 2`（整数除）。
+- health：`health = 12 + (floorIndex * 8)`（整数除）。
 - attack：分段。  
-  - `floorIndex < 20`（1–20 层）：`attack = 3 + floorIndex / 2`。  
-  - `floorIndex >= 20`（21 层起）：`attack = floorIndex + 48`（整数）。  
+  - `floorIndex < 20`（1–20 层）：`attack = 3 + floorIndex `。  
+  - `floorIndex >= 20`（21 层起）：`attack = floorIndex * 2`。  
 - defense：`defense = 2 + floorIndex / 3`。  
 - 示例：1 层 atk=3；20 层 atk=13；30 层 atk=78；50 层 atk=98；100 层 atk=147。  
 - **crit / critChance / blockChance / stunChance**（小怪，平衡：低层为 0，随楼层缓升）：  
@@ -276,10 +279,10 @@ TowerTop 是一款爬塔游戏：共 100 层，玩家从第 1 层开始，通过
 **BOSS（每 5 层）**
 
 - level：`level = min(100, (floorIndex + 1))`，与楼层一致。
-- health：`health = 40 + floorIndex * 3`。
+- health：`health = 40 + floorIndex * 20`。
 - attack：分段。  
   - `floorIndex < 20`（1–20 层）：`attack = 7 + floorIndex`。  
-  - `floorIndex >= 20`（25 层起）：`attack = 30 + (floorIndex * 3) / 2`（整数除）。  
+  - `floorIndex >= 20`（25 层起）：`attack = 30 + (floorIndex * 3)`（整数除）。  
 - defense：`defense = 4 + floorIndex / 2`。  
 - 示例：5 层（fi=4）atk=11；20 层（fi=19）atk=26；30 层（fi=29）atk=73；60 层（fi=59）atk=118；75 层（fi=74）atk=141。  
 - **crit / critChance / blockChance / stunChance**（BOSS）：  

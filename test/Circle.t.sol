@@ -1,50 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {RouterTestBase} from "./RouterTestBase.sol";
 import {IGameLogic} from "../src/interfaces/IGameLogic.sol";
-import {IGameToken} from "../src/interfaces/IGameToken.sol";
-import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
-import {GameToken} from "../src/GameToken.sol";
-import {GameAssets} from "../src/GameAssets.sol";
-import {GameV0} from "../src/GameV0.sol";
-import {Player, Character} from "../src/libraries/Character.sol";
+import {Player} from "../src/libraries/Character.sol";
 import {Floor} from "../src/libraries/Environment.sol";
 
-contract GameV0CircleHarness is GameV0 {
-    constructor(address _gameToken_, address _gameAssets_) GameV0(_gameToken_, _gameAssets_) {}
-
-    function exposedSetFloorIndex(address addr, uint8 index) external {
-        findFloor(addr).index = index;
-    }
-}
-
 /**
- * Unit tests for GameLogic.circle() (reset at 100th floor: player stats reset, courage+1, floor rebuilt).
+ * Unit tests for Game.circle() (reset at 100th floor: player stats reset, courage+1, floor rebuilt).
  */
-contract CircleTest is Test {
-    IGameLogic gameLogic;
-    IGameToken gameToken;
-    IGameAssets gameAssets;
-    GameV0CircleHarness harness;
-
+contract CircleTest is RouterTestBase {
     address user;
 
     function setUp() public {
         user = address(0x1234);
-
-        GameToken token = new GameToken("Tower Top Token", "TOP");
-        GameAssets assets = new GameAssets("");
-        GameV0CircleHarness game = new GameV0CircleHarness(address(token), address(assets));
-
-        token.setProxy(address(game));
-        assets.setProxy(address(game));
-
-        gameLogic = IGameLogic(address(game));
-        gameToken = IGameToken(address(token));
-        gameAssets = IGameAssets(address(assets));
-        harness = GameV0CircleHarness(address(game));
-
+        deployRouterStack();
         vm.startPrank(user);
         vm.prevrandao(0x1234);
         gameLogic.born();
@@ -84,15 +54,17 @@ contract CircleTest is Test {
 
     function test_circle_success_resetsPlayerAndIncrementsCourage() public {
         vm.startPrank(user);
-        // Advance and fight so player levels up at least once (meaningful reset after circle)
         _clearCurrentFloorWithSeed(0x1234);
         gameLogic.nextFloor();
         _clearCurrentFloorWithSeed(0x1234 + 100);
         assertGe(gameLogic.getPlayer(user).level, 2, "player should be at least level 2");
+        vm.stopPrank();
 
-        // Simulate being at 100th floor (index 99)
-        harness.exposedSetFloorIndex(user, 99);
+        // setFloorIndex only callable by game proxy
+        vm.prank(address(gameLogic));
+        heroLogic.setFloorIndex(user, 99);
 
+        vm.startPrank(user);
         Player memory before = gameLogic.getPlayer(user);
         assertEq(gameLogic.getFloor(user).index, 99, "at 100th floor");
 
@@ -111,15 +83,14 @@ contract CircleTest is Test {
     }
 
     function test_circle_success_floorReconstructed() public {
-        vm.startPrank(user);
-        harness.exposedSetFloorIndex(user, 99);
+        vm.prank(address(gameLogic));
+        heroLogic.setFloorIndex(user, 99);
 
+        vm.prank(user);
         gameLogic.circle();
 
         Floor memory floor = gameLogic.getFloor(user);
-        // clearFloor() deletes floor.index so it becomes 0; new cycle starts at floor 0
-        assertEq(floor.index, 0, "floor reset to 0 after circle (new cycle)");
-        // Floor was cleared and rebuilt with new content for floor 0
+        assertEq(floor.index, 0, "floor reset to 0 after circle");
         vm.stopPrank();
     }
 }
