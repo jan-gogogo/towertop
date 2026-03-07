@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {Aoka} from "./Enemy.sol";
-import {EquipmentMaterials, Sword, Shield, Armor, Property} from "./Property.sol";
+import {Equipment, EquipmentMaterials, Property} from "./Property.sol";
 import {Rarity} from "./Attribute.sol";
 import {FloorIndex} from "./FloorIndex.sol";
 
@@ -20,16 +20,10 @@ struct Foundry {
 }
 
 struct Shop {
-    // price per item.
     uint256[] price;
-    // item IDs for sale.
     uint256[] items;
-    Sword[] swords;
-    Shield[] shields;
-    Armor[] armors;
-    uint256[] swordPrice;
-    uint256[] shieldPrice;
-    uint256[] armorPrice;
+    Equipment[] equipments;
+    uint256[] equipmentPrices;
 }
 
 library Environment {
@@ -115,15 +109,13 @@ library Environment {
                     uint8 level = Property.calEquipmentLevel(floorIndex);
                     EquipmentMaterials materials = Property.calEquipmentMaterials(uint8(seed[i + slotCount]));
                     if (r < swordBorder) {
-                        Property.pushSword(shop.swords, materials, rarity, level);
-                        shop.swordPrice.push(Property.equipPrice(level, rarity));
+                        Property.pushEquipmentSword(shop.equipments, materials, rarity, level);
                     } else if (r < shieldBorder) {
-                        Property.pushShield(shop.shields, rarity, level);
-                        shop.shieldPrice.push(Property.equipPrice(level, rarity));
+                        Property.pushEquipmentShield(shop.equipments, rarity, level);
                     } else {
-                        Property.pushArmor(shop.armors, materials, rarity, level);
-                        shop.armorPrice.push(Property.equipPrice(level, rarity));
+                        Property.pushEquipmentArmor(shop.equipments, materials, rarity, level);
                     }
+                    shop.equipmentPrices.push(Property.equipPrice(level, rarity));
                 } else {
                     if (r < bookBorder) {
                         shop.items.push(Property.getBookId(rarity));

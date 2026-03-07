@@ -49,19 +49,14 @@ library Character {
         }
     }
 
-    function levelUpAttributesIncrement(uint8 curLevel)
+    function levelUpAttributesIncrement()
         internal
         pure
         returns (uint16 healthMaxIncrement, uint16 attackIncrement, uint16 defenseIncrement)
     {
-        unchecked {
-            // overflow not possible
-            // curLevel is at most 100
-            // (4 * 100 + 20) < 65535
-            healthMaxIncrement = 20 + (uint16(curLevel) - 1) * 4;
-            attackIncrement = 3 + (curLevel - 1);
-            defenseIncrement = 2 + (curLevel - 1);
-        }
+        healthMaxIncrement = 20;
+        attackIncrement = 3;
+        defenseIncrement = 2;
     }
 
     function initPlayer() internal view returns (Player memory) {

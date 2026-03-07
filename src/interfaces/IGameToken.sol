@@ -9,7 +9,6 @@ interface IGameToken is IERC20, IERC20Permit {
     error ProxyAddressAlreadySet();
 
     function setProxy(address proxyAddr) external;
-
     function mint(address account, uint256 value) external;
     function burn(address account, uint256 value) external;
 }

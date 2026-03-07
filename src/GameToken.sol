@@ -12,46 +12,35 @@ import {IGameToken} from "./interfaces/IGameToken.sol";
  * @dev    We keep ERC20 in the list so constructor can call ERC20(name, symbol)
  */
 contract GameToken is ERC20, ERC20Permit, IGameToken {
-    /// @notice only the proxy contract has the authority to operate
-    address public _proxy;
-    /// @notice only the specified address has the authority to execute the `setProxy` function
-    address public immutable DEPLOYER;
+    /// @notice primary proxy (e.g. GameV1's proxy) with mint/burn authority
+    address public _permit;
 
-    modifier onlyProxy() {
-        _onlyProxy();
+    modifier onlyPermit() {
+        _onlyPermit();
         _;
     }
 
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) ERC20Permit(name) {
-        DEPLOYER = msg.sender;
-    }
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) ERC20Permit(name) {}
 
     function nonces(address owner) public view override(ERC20Permit, IERC20Permit) returns (uint256) {
         return super.nonces(owner);
     }
 
-    /// @notice once the proxy contract address is set, it cannot be changed
-    function setProxy(address proxyAddr) external {
-        if (msg.sender != DEPLOYER) {
-            revert IGameToken.Unauthorized();
-        }
-        if (_proxy != address(0)) {
-            revert IGameToken.ProxyAddressAlreadySet();
-        }
-        _proxy = proxyAddr;
+    /// @notice once set, it cannot be changed
+    function setProxy(address permitAddr) external {
+        if (_permit != address(0)) revert ProxyAddressAlreadySet();
+        _permit = permitAddr;
     }
 
-    function mint(address account, uint256 value) external onlyProxy {
+    function mint(address account, uint256 value) external onlyPermit {
         super._mint(account, value);
     }
 
-    function burn(address account, uint256 value) external onlyProxy {
+    function burn(address account, uint256 value) external onlyPermit {
         super._burn(account, value);
     }
 
-    function _onlyProxy() private view {
-        if (msg.sender != _proxy) {
-            revert IGameToken.Unauthorized();
-        }
+    function _onlyPermit() private view {
+        if (msg.sender != _permit) revert Unauthorized();
     }
 }
