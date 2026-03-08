@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tower Top - Ronin Testnet</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Ethers v6 from CDN for simple provider usage -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050816;
+        --bg-elevated: #111827;
+        --accent: #38bdf8;
+        --accent-soft: rgba(56, 189, 248, 0.15);
+        --border-subtle: rgba(148, 163, 184, 0.4);
+        --text-main: #e5e7eb;
+        --text-muted: #9ca3af;
+        --danger: #f97373;
+      }
+      * {
+        box-sizing: border-box;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+          "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #0f172a 0, #020617 45%, #000 100%);
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .shell {
+        width: 100%;
+        max-width: 1280px;
+        background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.92));
+        border-radius: 18px;
+        box-shadow:
+          0 16px 40px rgba(15, 23, 42, 0.9),
+          0 0 0 1px rgba(148, 163, 184, 0.25);
+        padding: 14px 18px 18px;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 11px;
+        background: rgba(15, 118, 110, 0.22);
+        color: #6ee7b7;
+      }
+      .pill-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #6ee7b7;
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3);
+      }
+      button {
+        border: none;
+        border-radius: 999px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--accent);
+        color: #0b1120;
+        box-shadow: 0 10px 30px rgba(56, 189, 248, 0.45);
+        transition: transform 0.12s ease, box-shadow 0.12s ease,
+          background 0.12s ease, opacity 0.12s ease;
+      }
+      button.secondary {
+        background: transparent;
+        color: var(--text-main);
+        box-shadow: none;
+        border-radius: 10px;
+        padding: 4px 10px;
+        font-size: 11px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+        box-shadow: none;
+      }
+      button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 35px rgba(56, 189, 248, 0.7);
+      }
+      .card {
+        border-radius: 14px;
+        padding: 14px 14px 12px;
+        background: radial-gradient(circle at top, var(--accent-soft), transparent 55%),
+          #020617;
+        border: 1px solid var(--border-subtle);
+      }
+      .card h2 {
+        margin: 0 0 6px;
+        font-size: 14px;
+      }
+      .card p {
+        margin: 0 0 10px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .status-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .badge {
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        padding: 3px 8px;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 11px;
+      }
+      .log {
+        margin-top: 6px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px dashed rgba(148, 163, 184, 0.5);
+        font-size: 11px;
+        max-height: 120px;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
+      .log strong {
+        color: var(--accent);
+      }
+      .error {
+        color: var(--danger);
+      }
+      main {
+        display: block;
+        align-items: stretch;
+      }
+      .battle-card {
+        padding: 14px 14px 10px;
+      }
+      .battle-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .battle-header-row h2 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .battle-header-row span {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .battle-stage {
+        position: relative;
+        width: 100%;
+        height: min(80vh, 720px);
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        background: radial-gradient(circle at top, rgba(15, 23, 42, 0.9), #020617);
+      }
+      .battle-bg {
+        position: absolute;
+        inset: 0;
+        background-image: url("./assets/backgrounds/bg_tower_battle.png");
+        background-size: cover;
+        background-position: center;
+        filter: saturate(1.05);
+      }
+      .battle-overlay-gradient {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to top, rgba(15, 23, 42, 0.9), transparent 55%);
+        pointer-events: none;
+      }
+      .sprite {
+        position: absolute;
+        width: 256px;
+        height: 256px;
+        background-repeat: no-repeat;
+        /* 单状态 1:1 精灵图：整张图等比缩放展示 */
+        background-size: contain;
+        background-position: center bottom;
+        image-rendering: auto;
+      }
+      .sprite.enemy {
+        /* 敌人落在左侧地面区域 */
+        left: 10%;
+        bottom: 6%;
+        transform-origin: center bottom;
+      }
+      .sprite.player {
+        right: 5%;
+        bottom: -2%;
+        transform-origin: center;
+      }
+      .battle-info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .battle-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .battle-controls button {
+        font-size: 11px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        box-shadow: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="pill">
+            <span class="pill-dot"></span>
+            <span>Ronin Saigon Testnet</span>
+          </div>
+          <button id="connectBtn">Connect Wallet</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="card battle-card">
+          <div class="battle-header-row">
+            <div>
+              <h2>Battle preview</h2>
+              <span>Layout: enemy top-left, player bottom-right</span>
+            </div>
+            <span class="badge mono">Aoka: Goblin · State demo</span>
+          </div>
+
+          <div class="battle-stage">
+            <div class="battle-bg"></div>
+            <div
+              id="enemySprite"
+              class="sprite enemy"
+              data-sheet="aoka_goblin"
+            ></div>
+            <div
+              id="playerSprite"
+              class="sprite player"
+              data-sheet="player_hero_4states"
+              data-state="0"
+            ></div>
+            <div class="battle-overlay-gradient"></div>
+          </div>
+
+          <div class="battle-info-row">
+            <div class="mono">
+              Enemy: <code>Goblin</code> (AokaType 2) · Player: hero (back view)
+            </div>
+            <div class="battle-controls">
+              <button id="idleBtn" type="button">Idle</button>
+              <button id="attackBtn" type="button">Attack demo</button>
+              <button id="hitBtn" type="button">Hit demo</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      const RONIN_CHAIN_ID_HEX = "0x7e5"; // 2021
+      const roninParams = {
+        chainId: RONIN_CHAIN_ID_HEX,
+        chainName: "Ronin Saigon Testnet",
+        rpcUrls: ["https://saigon-testnet.roninchain.com/rpc"],
+        nativeCurrency: {
+          name: "Ronin",
+          symbol: "RON",
+          decimals: 18
+        },
+        blockExplorerUrls: ["https://saigon-app.roninchain.com/"]
+      };
+
+      const connectBtn = document.getElementById("connectBtn");
+
+      function log(message, isError = false) {
+        // Log to console; UI log panel has been removed from this minimal preview.
+        if (isError) {
+          console.error("[TowerTop]", message);
+        } else {
+          console.log("[TowerTop]", message);
+        }
+      }
+
+      function setWalletStatus(text) {
+        log(text);
+      }
+      function setChainStatus(text) {
+        log(text);
+      }
+      function setAccountStatus(text) {
+        log(text);
+      }
+
+      async function detectWallet() {
+        if (typeof window.ethereum === "undefined") {
+          setWalletStatus("Wallet: not found (install MetaMask / Ronin)");
+          log("No EVM wallet injected (window.ethereum is undefined).", true);
+          if (connectBtn) connectBtn.disabled = true;
+          return null;
+        }
+        setWalletStatus("Wallet: detected");
+        return window.ethereum;
+      }
+
+      async function ensureNetwork(ethereum) {
+        const currentChainId = await ethereum.request({ method: "eth_chainId" });
+        if (currentChainId === RONIN_CHAIN_ID_HEX) {
+          setChainStatus("Chain: Ronin Saigon (0x7e5)");
+          return;
+        }
+
+        log(`Current chainId is ${currentChainId}, adding + switching to Ronin Saigon...`);
+
+        try {
+          await ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [roninParams]
+          });
+        } catch (err) {
+          log(`wallet_addEthereumChain error: ${err.message || err}`, true);
+          throw err;
+        }
+
+        try {
+          await ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: RONIN_CHAIN_ID_HEX }]
+          });
+        } catch (err) {
+          log(`wallet_switchEthereumChain error: ${err.message || err}`, true);
+          throw err;
+        }
+
+        setChainStatus("Chain: Ronin Saigon (0x7e5)");
+      }
+
+      async function connect() {
+        const ethereum = await detectWallet();
+        if (!ethereum) return;
+
+        if (connectBtn) connectBtn.disabled = true;
+        log("Requesting accounts + network...");
+
+        try {
+          await ensureNetwork(ethereum);
+
+          const accounts = await ethereum.request({
+            method: "eth_requestAccounts"
+          });
+
+          const account = accounts?.[0];
+          if (account) {
+            setAccountStatus(`Account: ${account.slice(0, 6)}...${account.slice(-4)}`);
+            shortInfo.textContent = `Connected to Ronin Saigon as ${account}`;
+          } else {
+            setAccountStatus("Account: none");
+          }
+
+          // Example: create ethers provider for future contract calls
+          if (window.ethers && ethereum) {
+            const provider = new window.ethers.BrowserProvider(ethereum);
+            const network = await provider.getNetwork();
+            log(`Connected via ethers – chainId: ${network.chainId.toString()}`);
+          } else {
+            log("ethers not available; provider not created.", true);
+          }
+        } catch (err) {
+          log(`Connect error: ${err.message || err}`, true);
+        } finally {
+          if (connectBtn) connectBtn.disabled = false;
+        }
+      }
+
+      if (connectBtn) connectBtn.addEventListener("click", connect);
+
+      // --- Simple battle preview using existing assets ----------------------
+      const enemySprite = document.getElementById("enemySprite");
+      const playerSprite = document.getElementById("playerSprite");
+      const idleBtn = document.getElementById("idleBtn");
+      const attackBtn = document.getElementById("attackBtn");
+      const hitBtn = document.getElementById("hitBtn");
+
+      function applySheet(el) {
+        const sheet = el?.dataset.sheet;
+        if (!sheet) return;
+        // 单状态 1:1 精灵：直接整张图展示
+        if (sheet === "aoka_goblin") {
+          el.style.backgroundImage = 'url("./assets/aoka/aoka_goblin.png")';
+        } else if (sheet === "player_hero_4states") {
+          // 若后续也改成单图，只需把路径换成新的文件
+          el.style.backgroundImage = 'url("./assets/player/player_hero_4states.png")';
+        }
+      }
+
+      function initBattlePreview() {
+        if (!enemySprite || !playerSprite) return;
+        applySheet(enemySprite);
+        applySheet(playerSprite);
+
+        // 按钮暂时只作示例，不再切换多状态格子
+        idleBtn?.addEventListener("click", () => {
+          log("Idle demo clicked");
+        });
+        attackBtn?.addEventListener("click", () => {
+          log("Attack demo clicked");
+        });
+        hitBtn?.addEventListener("click", () => {
+          log("Hit demo clicked");
+        });
+      }
+
+      // Initialisation
+      detectWallet();
+      initBattlePreview();
+    </script>
+  </body>
+</html>
+
