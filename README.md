@@ -1,6 +1,6 @@
-## Tower Top GameFI
+## Aoka Tower GameFI
 
-Tower Top is an Ethereum‑based tower‑climbing GameFI project.  
+Aoka Tower is an Ethereum‑based tower‑climbing GameFI project.  
 The player starts on floor 1 and climbs up to floor 100 by defeating monsters, challenging BOSSes, and acquiring or upgrading equipment.
 
 ### Core Gameplay
@@ -31,6 +31,7 @@ The player starts on floor 1 and climbs up to floor 100 by defeating monsters, c
 ---
 
 ## Contracts & Architecture
+![Architecture](docs/img/architecture.png)
 
 The game uses **three proxies** (Game, Hero, Inventory), each with logic/storage separation. Users interact only with the **Game proxy**; Hero and Inventory are callable only by the Game proxy (`setPermit`).
 
@@ -49,7 +50,7 @@ The game uses **three proxies** (Game, Hero, Inventory), each with logic/storage
 | **InventoryLogic** / **InventoryV1** | `src/InventoryLogic.sol`, `src/InventoryV1.sol` | Bag, warehouse, equipment/items, shop and forge logic. InventoryV1 is behind the Inventory proxy; only the Game proxy may call it. |
 | **TransparentUpgradeableProxy** | `src/TransparentUpgradeableProxy.sol` | ERC1967 transparent proxy used for Game, Hero, and Inventory. Admin calls `upgradeToAndCall` on the proxy to upgrade the implementation. |
 | **GameAssets** | `src/GameAssets.sol`| ERC1155: equipment, items, gold. Only the Game proxy can mint/burn after `setProxy(gameProxy)`. |
-| **GameToken**  | `src/GameToken.sol` | ERC20 “Tower Top Token” (TOP). Only the Game proxy can mint/burn after `setProxy(gameProxy)`. |
+| **GameToken**  | `src/GameToken.sol` | ERC20 “Aoka Tower Token” (ATT). Only the Game proxy can mint/burn after `setProxy(gameProxy)`. |
 
 ### Interfaces
 

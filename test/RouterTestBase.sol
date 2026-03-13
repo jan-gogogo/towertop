@@ -30,7 +30,7 @@ abstract contract RouterTestBase is Test {
     function deployRouterStack() internal {
         address owner = address(this);
 
-        GameToken token = new GameToken("Tower Top Token", "TOP");
+        GameToken token = new GameToken("Aoka Tower Token", "ATT");
         GameAssets assets = new GameAssets("");
 
         GameV1 gameImpl = new GameV1();
