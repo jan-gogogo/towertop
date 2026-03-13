@@ -1,0 +1,8 @@
+{
+  "name": "tower-frontend",
+  "private": true,
+  "scripts": {
+    "start": "npx serve . -p 3000",
+    "serve": "npx serve . -p 3000"
+  }
+}

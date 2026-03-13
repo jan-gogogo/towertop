@@ -1,0 +1,1212 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "_gameAssets",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IGameAssets"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "_gameToken",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IGameToken"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "_heroLogic",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IHeroLogic"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "_inventoryLogic",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IInventoryLogic"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "battle",
+    "inputs": [
+      {
+        "name": "enemySlot",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "born",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "buy",
+    "inputs": [
+      {
+        "name": "typeIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "slot",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "circle",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deposit",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "depositWithPermit",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "v",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "r",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "s",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "equip",
+    "inputs": [
+      {
+        "name": "equipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "fullHeal",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getBag",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getEnemies",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct Aoka[]",
+        "components": [
+          {
+            "name": "typ",
+            "type": "uint8",
+            "internalType": "enum AokaType"
+          },
+          {
+            "name": "trait",
+            "type": "uint8",
+            "internalType": "enum AokaTrait"
+          },
+          {
+            "name": "level",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "health",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "attack",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "defense",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "crit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "critChance",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockChance",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "stunChance",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "isBoss",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getFloor",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Floor",
+        "components": [
+          {
+            "name": "index",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "enemies",
+            "type": "tuple[]",
+            "internalType": "struct Aoka[]",
+            "components": [
+              {
+                "name": "typ",
+                "type": "uint8",
+                "internalType": "enum AokaType"
+              },
+              {
+                "name": "trait",
+                "type": "uint8",
+                "internalType": "enum AokaTrait"
+              },
+              {
+                "name": "level",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "health",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "attack",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "defense",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "crit",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "critChance",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "blockChance",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "stunChance",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "isBoss",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          },
+          {
+            "name": "foundry",
+            "type": "tuple",
+            "internalType": "struct Foundry",
+            "components": [
+              {
+                "name": "rarity",
+                "type": "uint8",
+                "internalType": "enum Rarity"
+              }
+            ]
+          },
+          {
+            "name": "shop",
+            "type": "tuple",
+            "internalType": "struct Shop",
+            "components": [
+              {
+                "name": "price",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              },
+              {
+                "name": "items",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              },
+              {
+                "name": "equipments",
+                "type": "tuple[]",
+                "internalType": "struct Equipment[]",
+                "components": [
+                  {
+                    "name": "etype",
+                    "type": "uint8",
+                    "internalType": "enum EquipmentType"
+                  },
+                  {
+                    "name": "materials",
+                    "type": "uint8",
+                    "internalType": "enum EquipmentMaterials"
+                  },
+                  {
+                    "name": "rarity",
+                    "type": "uint8",
+                    "internalType": "enum Rarity"
+                  },
+                  {
+                    "name": "level",
+                    "type": "uint8",
+                    "internalType": "uint8"
+                  },
+                  {
+                    "name": "attack",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "defense",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "crit",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "critChance",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "blockChance",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "stunChance",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  }
+                ]
+              },
+              {
+                "name": "equipmentPrices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPlayer",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Player",
+        "components": [
+          {
+            "name": "level",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "experience",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "healthMax",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "health",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "attack",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "defense",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "courage",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "createAt",
+            "type": "uint40",
+            "internalType": "uint40"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getWarehouse",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "_heroLogic_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_inventoryLogic_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_gameToken_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_gameAssets_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mergeArmor",
+    "inputs": [
+      {
+        "name": "mainEquipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "subEquipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mergeShield",
+    "inputs": [
+      {
+        "name": "mainEquipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "subEquipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mergeSword",
+    "inputs": [
+      {
+        "name": "mainEquipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "subEquipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "nextFloor",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "unequip",
+    "inputs": [
+      {
+        "name": "equipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "upgrade",
+    "inputs": [
+      {
+        "name": "equipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "useItems",
+    "inputs": [
+      {
+        "name": "slots",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "withdraw",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "Born",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Combat",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "seed",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "floor",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct Floor",
+        "components": [
+          {
+            "name": "index",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "enemies",
+            "type": "tuple[]",
+            "internalType": "struct Aoka[]",
+            "components": [
+              {
+                "name": "typ",
+                "type": "uint8",
+                "internalType": "enum AokaType"
+              },
+              {
+                "name": "trait",
+                "type": "uint8",
+                "internalType": "enum AokaTrait"
+              },
+              {
+                "name": "level",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "health",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "attack",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "defense",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "crit",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "critChance",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "blockChance",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "stunChance",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "isBoss",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          },
+          {
+            "name": "foundry",
+            "type": "tuple",
+            "internalType": "struct Foundry",
+            "components": [
+              {
+                "name": "rarity",
+                "type": "uint8",
+                "internalType": "enum Rarity"
+              }
+            ]
+          },
+          {
+            "name": "shop",
+            "type": "tuple",
+            "internalType": "struct Shop",
+            "components": [
+              {
+                "name": "price",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              },
+              {
+                "name": "items",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              },
+              {
+                "name": "equipments",
+                "type": "tuple[]",
+                "internalType": "struct Equipment[]",
+                "components": [
+                  {
+                    "name": "etype",
+                    "type": "uint8",
+                    "internalType": "enum EquipmentType"
+                  },
+                  {
+                    "name": "materials",
+                    "type": "uint8",
+                    "internalType": "enum EquipmentMaterials"
+                  },
+                  {
+                    "name": "rarity",
+                    "type": "uint8",
+                    "internalType": "enum Rarity"
+                  },
+                  {
+                    "name": "level",
+                    "type": "uint8",
+                    "internalType": "uint8"
+                  },
+                  {
+                    "name": "attack",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "defense",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "crit",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "critChance",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "blockChance",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  },
+                  {
+                    "name": "stunChance",
+                    "type": "uint16",
+                    "internalType": "uint16"
+                  }
+                ]
+              },
+              {
+                "name": "equipmentPrices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "player",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct Player",
+        "components": [
+          {
+            "name": "level",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "experience",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "healthMax",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "health",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "attack",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "defense",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "courage",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "createAt",
+            "type": "uint40",
+            "internalType": "uint40"
+          }
+        ]
+      },
+      {
+        "name": "ae",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct AbilitiesExtra",
+        "components": [
+          {
+            "name": "attack",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "defense",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "crit",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "critChance",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "stunChance",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "blockChance",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "weaponMaterialsIdx",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "armorEquipped",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "armorMaterialsIdx",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      },
+      {
+        "name": "aoka",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct Aoka",
+        "components": [
+          {
+            "name": "typ",
+            "type": "uint8",
+            "internalType": "enum AokaType"
+          },
+          {
+            "name": "trait",
+            "type": "uint8",
+            "internalType": "enum AokaTrait"
+          },
+          {
+            "name": "level",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "health",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "attack",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "defense",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "crit",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "critChance",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "blockChance",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "stunChance",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "isBoss",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyFullHealth",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AmountAtLeast1e18",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AmountAtLeast1e9",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CannotMerge",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyItemIds",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EnemyNotFound",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "EquipmentNotFound",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientCoin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientERC20",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidEquipmentId",
+    "inputs": [
+      {
+        "name": "equipmentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidIndex",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidTypeIndex",
+    "inputs": [
+      {
+        "name": "typeIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ItemNotFound",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LengthOutOfRange1To5",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MustDefeatAllEenemies",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAt100Floor",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PlayerAlreadyExists",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PlayerNotFound",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ReachedMaxLevel",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReachedTheTopFloor",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SameEquipmentIds",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WrongFloorIndex",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WrongItemType",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WrongSequence",
+    "inputs": []
+  }
+]

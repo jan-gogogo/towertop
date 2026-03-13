@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {console} from "forge-std/console.sol";
 import {RouterTestBase} from "./RouterTestBase.sol";
 import {IGameLogic} from "../src/interfaces/IGameLogic.sol";
 import {Property} from "../src/libraries/Property.sol";
 import {Player} from "../src/libraries/Character.sol";
 import {Floor} from "../src/libraries/Environment.sol";
 import {Character} from "../src/libraries/Character.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * Unit tests for Game.battle(uint256 enemySlot).
@@ -224,6 +226,38 @@ contract BattleTest is RouterTestBase {
         vm.expectRevert(abi.encodeWithSelector(IGameLogic.EnemyNotFound.selector, uint256(0)));
         gameLogic.battle(0);
         vm.stopPrank();
+    }
+
+    /// @notice Gas benchmark: run battle(0) many times, take max gas used, add 20% buffer, write to frontend/gasLimit.json.
+    /// Run: forge test --match-test test_battle_gasBenchmark -vv
+    function test_battle_gasBenchmark() public {
+        uint256 runs = 20;
+        uint256 maxGasUsed = 0;
+        uint256 bufferPercent = 20; // 20% on top of max
+
+        vm.startPrank(user);
+        for (uint256 i = 0; i < runs; i++) {
+            uint256 snap = vm.snapshotState();
+            vm.prevrandao(bytes32(uint256(0xbeef0000 + i)));
+            uint256 gasBefore = gasleft();
+            gameLogic.battle(0);
+            uint256 gasUsed = gasBefore - gasleft();
+            if (gasUsed > maxGasUsed) maxGasUsed = gasUsed;
+            vm.revertToState(snap);
+        }
+        vm.stopPrank();
+
+        uint256 recommended = (maxGasUsed * (100 + bufferPercent)) / 100;
+        console.log("battle gas benchmark: runs=", runs);
+        console.log("max gas used:", maxGasUsed);
+        console.log("recommended gasLimit (+20%%):", recommended);
+
+        string memory json = string.concat(
+            "{\"battleGasLimit\":",
+            Strings.toString(recommended),
+            "}"
+        );
+        vm.writeFile("frontend/gasLimit.json", json);
     }
 }
 

@@ -1,0 +1,1314 @@
+import { mountHeader } from "./header-vue.js";
+mountHeader("appHeader");
+
+import { CONTRACTS, getGameContract, getFloor, isBorn, nextFloor, battle, buy, getPlayer, getAbilitiesExtra, getBag, getWarehouse, useItems, equip, unequip, parseCombatFromReceipt, getEquippedIds, getEquipments, getPuppets } from "./gameApi.js";
+import { getAokaImageUrl, createBattleReplayUI } from "./battle.js";
+import { t, setLang, getLang, initLang, aokaName } from "./i18n.js";
+import { showModal } from "./modal.js";
+import { createLoading } from "./script/loading.js";
+
+const RONIN_CHAIN_ID_HEX = CONTRACTS.chainIdHex;
+const RONIN_CHAIN_ID_NUM = CONTRACTS.chainId;
+const roninParams = {
+  chainId: RONIN_CHAIN_ID_HEX,
+  chainName: "Ronin Saigon Testnet",
+  rpcUrls: ["https://saigon-testnet.roninchain.com/rpc"],
+  nativeCurrency: { name: "Ronin", symbol: "RON", decimals: 18 },
+  blockExplorerUrls: ["https://saigon-app.roninchain.com/"]
+};
+
+const connectBtn = document.getElementById("connectBtn");
+const walletDropdown = document.getElementById("walletDropdown");
+const walletOptionRonin = document.getElementById("walletOptionRonin");
+const walletOptionMetaMask = document.getElementById("walletOptionMetaMask");
+const walletNotConnected = document.getElementById("walletNotConnected");
+const walletConnected = document.getElementById("walletConnected");
+const walletAddr = document.getElementById("walletAddr");
+const walletAddrWrap = document.getElementById("walletAddrWrap");
+const playerTooltip = document.getElementById("playerTooltip");
+const playerTooltipBag = document.querySelector(".player-tooltip-bag");
+const disconnectBtn = document.getElementById("disconnectBtn");
+const floorLoadingOverlay = document.getElementById("floorLoadingOverlay");
+const floorPageWrap = document.getElementById("floorPageWrap");
+const floorTitle = document.getElementById("floorTitle");
+
+function isBossFloor(floorIndex) {
+  return (Number(floorIndex) + 1) % 5 === 0;
+}
+const btnNextFloor = document.getElementById("btnNextFloor");
+const floorAokas = document.getElementById("floorAokas");
+const btnShop = document.getElementById("btnShop");
+const btnFoundry = document.getElementById("btnFoundry");
+const floorBattleOverlay = document.getElementById("floorBattleOverlay");
+const floorBattleContainer = document.getElementById("floorBattleContainer");
+const shopModalRoot = document.getElementById("shopModalRoot");
+const shopModalTitle = document.getElementById("shopModalTitle");
+const shopModalList = document.getElementById("shopModalList");
+const shopModalClose = document.getElementById("shopModalClose");
+const bagModalRoot = document.getElementById("bagModalRoot");
+const bagModalTitle = document.getElementById("bagModalTitle");
+const bagModalList = document.getElementById("bagModalList");
+const bagModalClose = document.getElementById("bagModalClose");
+const floorPlayerBar = document.getElementById("floorPlayerBar");
+const floorPlayerAvatarBtn = document.getElementById("floorPlayerAvatarBtn");
+const floorPlayerLevel = document.getElementById("floorPlayerLevel");
+const floorPlayerHpLabel = document.getElementById("floorPlayerHpLabel");
+const floorPlayerHpFill = document.getElementById("floorPlayerHpFill");
+const floorPlayerHpText = document.getElementById("floorPlayerHpText");
+const floorPlayerExpLabel = document.getElementById("floorPlayerExpLabel");
+const floorPlayerExpFill = document.getElementById("floorPlayerExpFill");
+const floorPlayerExpText = document.getElementById("floorPlayerExpText");
+const equipPanelRoot = document.getElementById("equipPanelRoot");
+const equipPanelTitle = document.getElementById("equipPanelTitle");
+const equipPanelAttrs = document.getElementById("equipPanelAttrs");
+const equipPanelSlots = document.getElementById("equipPanelSlots");
+const equipPanelClose = document.getElementById("equipPanelClose");
+const equipPanelBackdrop = document.getElementById("equipPanelBackdrop");
+
+let gameContract = null;
+let floorBattleUI = null;
+let lastFloorData = null;
+let bagModalActiveTab = "bag";
+let bagModalBagNums = [];
+let bagModalWarehouseIds = [];
+let bagModalEquipmentMap = {};
+let bagModalPuppetMap = {};
+let bagModalBodyEl = null;
+
+function getFloorBattleUI() {
+  if (!floorBattleUI && floorBattleContainer) {
+    floorBattleUI = createBattleReplayUI(floorBattleContainer, { assetBasePath: "./" });
+    floorBattleUI.onConfirm(() => {
+      if (floorBattleOverlay) floorBattleOverlay.classList.remove("visible");
+      loadFloor();
+    });
+  }
+  return floorBattleUI;
+}
+
+async function startBattleInPlace(floorIndex, enemySlot) {
+  if (!gameContract || !currentAccount) return;
+  const ui = getFloorBattleUI();
+  if (!ui) return;
+  floorBattleOverlay?.classList.add("visible");
+  ui.showWaiting(true, t("confirmingTx"));
+  let receipt;
+  try {
+    const tx = await battle(gameContract, enemySlot);
+    receipt = await tx.wait();
+  } catch (err) {
+    ui.showWaiting(false);
+    floorBattleOverlay?.classList.remove("visible");
+    loadFloor();
+    return;
+  }
+  try {
+    const raw = localStorage.getItem(BATTLE_HISTORY_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    list.push({ floor: floorIndex, slot: enemySlot, txHash: String(receipt.hash) });
+    localStorage.setItem(BATTLE_HISTORY_KEY, JSON.stringify(list.slice(-50)));
+  } catch (e) {}
+  ui.showWaiting(false);
+  const combat = parseCombatFromReceipt(gameContract, receipt);
+  if (!combat) {
+    floorBattleOverlay?.classList.remove("visible");
+    loadFloor();
+    return;
+  }
+  await ui.replay(combat);
+}
+
+let currentAccount = null;
+let currentProvider = null;
+
+const BATTLE_HISTORY_KEY = "tower-battle-history";
+
+const traitEffectIntervals = [];
+
+function clearTraitEffects() {
+  while (traitEffectIntervals.length) {
+    const id = traitEffectIntervals.pop();
+    if (id != null) clearInterval(id);
+  }
+}
+
+function attachTraitEffect(portraitEl, traitRaw) {
+  if (!portraitEl) return;
+  let trait = null;
+  const num = Number(traitRaw);
+  if (!Number.isNaN(num)) {
+    const map = ["electric", "earth", "fire"];
+    trait = map[num] || null;
+  } else if (traitRaw != null) {
+    trait = String(traitRaw).toLowerCase();
+  }
+  if (trait !== "fire" && trait !== "earth" && trait !== "electric") return;
+
+  const layer = document.createElement("div");
+  layer.className = "aoka-trait aoka-trait--" + trait;
+  portraitEl.appendChild(layer);
+
+  const hasAnimate = typeof layer.animate === "function";
+
+  if (trait === "fire") {
+    const spawnFire = () => {
+      if (!layer.isConnected) return;
+      const p = document.createElement("div");
+      p.className = "aoka-trait-fire-particle";
+      const rect = layer.getBoundingClientRect();
+      const width = rect.width || 180;
+      const height = rect.height || 180;
+      const x = Math.random() * width;
+      const y = height * 0.75 + Math.random() * (height * 0.1);
+      p.style.left = x + "px";
+      p.style.top = y + "px";
+      if (hasAnimate) {
+        p.animate(
+          [
+            { transform: "translateY(0)", opacity: 1 },
+            { transform: "translateY(-40px)", opacity: 0 }
+          ],
+          { duration: 700 }
+        );
+      }
+      layer.appendChild(p);
+      setTimeout(() => p.remove(), 700);
+    };
+    traitEffectIntervals.push(setInterval(spawnFire, 90));
+  } else if (trait === "earth") {
+    const spawnDust = () => {
+      if (!layer.isConnected) return;
+      const d = document.createElement("div");
+      d.className = "aoka-trait-earth-dust";
+      const rect = layer.getBoundingClientRect();
+      const width = rect.width || 200;
+      const height = rect.height || 200;
+      const baseX = width * 0.5;
+      const baseY = height * 0.9;
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 40;
+      d.style.left = baseX + "px";
+      d.style.top = baseY + "px";
+      if (hasAnimate) {
+        d.animate(
+          [
+            { transform: "translate(0,0)", opacity: 1 },
+            { transform: `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`, opacity: 0 }
+          ],
+          { duration: 600 }
+        );
+      }
+      layer.appendChild(d);
+      setTimeout(() => d.remove(), 600);
+    };
+    traitEffectIntervals.push(setInterval(spawnDust, 1200));
+  } else if (trait === "electric") {
+    const spawnElectric = () => {
+      if (!layer.isConnected) return;
+      const e = document.createElement("div");
+      e.className = "aoka-trait-electric-line";
+      const rect = layer.getBoundingClientRect();
+      const width = rect.width || 180;
+      const height = rect.height || 180;
+      e.style.left = Math.random() * width + "px";
+      e.style.top = Math.random() * height + "px";
+      e.style.transform = `rotate(${Math.random() * 60 - 30}deg)`;
+      layer.appendChild(e);
+      setTimeout(() => e.remove(), 150);
+    };
+    traitEffectIntervals.push(setInterval(spawnElectric, 800));
+  }
+}
+
+function getTxHashForSlot(floorIndex, slot) {
+  try {
+    const raw = localStorage.getItem(BATTLE_HISTORY_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].floor === floorIndex && list[i].slot === slot) return list[i].txHash;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function getProvider(walletType) {
+  if (walletType === "ronin") {
+    const ronin = window.ronin;
+    return (ronin?.provider && typeof ronin.provider.request === "function")
+      ? ronin.provider
+      : (ronin && typeof ronin.request === "function" ? ronin : null) || window.ethereum;
+  }
+  if (walletType === "metamask") return window.ethereum;
+  return null;
+}
+
+function updateHeaderState() {
+  const connected = !!currentAccount;
+  if (walletNotConnected) walletNotConnected.style.display = connected ? "none" : "block";
+  if (walletConnected) {
+    walletConnected.classList.toggle("visible", connected);
+    if (walletAddr && currentAccount) walletAddr.textContent = currentAccount.slice(0, 6) + "…" + currentAccount.slice(-4);
+  }
+  if (connectBtn) connectBtn.textContent = t("connectWallet");
+  if (disconnectBtn) disconnectBtn.textContent = t("disconnect");
+  if (walletDropdown) walletDropdown.classList.remove("open");
+}
+
+function aokaImage(typ) {
+  return `url("${getAokaImageUrl(Number(typ))}")`;
+}
+
+function updateFloorPlayerBar(player, extra) {
+  if (!floorPlayerBar) return;
+  const level = Number(player?.level ?? 0);
+  const health = Number(player?.health ?? 0);
+  const healthMax = Number(player?.healthMax ?? 100);
+  const exp = Number(player?.experience ?? 0);
+  const needExp = expNeededForLevel(level);
+  if (floorPlayerLevel) floorPlayerLevel.textContent = t("playerLevel") + " " + level;
+  if (floorPlayerHpLabel) floorPlayerHpLabel.textContent = t("playerHp");
+  if (floorPlayerHpFill) floorPlayerHpFill.style.width = healthMax ? (health / healthMax * 100) + "%" : "100%";
+  if (floorPlayerHpText) floorPlayerHpText.textContent = health + "/" + healthMax;
+  if (floorPlayerExpLabel) floorPlayerExpLabel.textContent = t("playerExp");
+  if (floorPlayerExpFill) floorPlayerExpFill.style.width = needExp ? (exp / needExp * 100) + "%" : "0%";
+  if (floorPlayerExpText) floorPlayerExpText.textContent = exp + "/" + needExp;
+}
+
+async function loadFloor() {
+  if (!gameContract || !currentAccount) return;
+  floorLoadingOverlay?.classList.remove("hidden");
+  if (floorPlayerBar) floorPlayerBar.style.display = walletConnected?.classList.contains("visible") ? "flex" : "none";
+  clearTraitEffects();
+  try {
+    const [floor, player, extra] = await Promise.all([
+      getFloor(gameContract, currentAccount),
+      getPlayer(gameContract, currentAccount),
+      getAbilitiesExtra(gameContract, currentAccount).catch(() => ({ attack: 0, defense: 0, crit: 0, critChance: 0, blockChance: 0, stunChance: 0 }))
+    ]);
+    lastFloorData = floor;
+    updateFloorPlayerBar(player, extra);
+    const floorIndex = Number(floor?.index ?? 0);
+    const bossFloor = isBossFloor(floorIndex);
+    floorPageWrap?.classList.toggle("boss-floor", bossFloor);
+    floorTitle.textContent = t("floorN", { n: floorIndex + 1 }) + (bossFloor ? " " + t("floorBossSuffix") : "");
+    floorAokas.innerHTML = "";
+    const enemies = floor?.enemies ?? [];
+    enemies.forEach((aoka, slot) => {
+      const card = document.createElement("div");
+      const isDead = Number(aoka.health) === 0;
+      card.className = "aoka-card" + (isDead ? " dead" : "") + (aoka.isBoss ? " boss" : "");
+      card.dataset.slot = String(slot);
+      const portrait = document.createElement("div");
+      portrait.className = "portrait";
+      if (isDead) {
+        const bg = document.createElement("div");
+        bg.className = "portrait-bg";
+        bg.style.backgroundImage = aokaImage(aoka.typ);
+        portrait.appendChild(bg);
+        const deadOverlay = document.createElement("div");
+        deadOverlay.className = "portrait-dead-overlay";
+        portrait.appendChild(deadOverlay);
+      } else {
+        portrait.style.backgroundImage = aokaImage(aoka.typ);
+        attachTraitEffect(portrait, aoka.trait);
+      }
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = bossFloor ? aokaName(Number(aoka.typ)) : ((aoka.isBoss ? "BOSS " : "") + aokaName(Number(aoka.typ)));
+      const stats = document.createElement("div");
+      stats.className = "stats";
+      const statsText = document.createElement("span");
+      statsText.textContent = t("statsFormat", { hp: aoka.health, atk: aoka.attack, def: aoka.defense });
+      stats.appendChild(statsText);
+      const traitNum = Number(aoka.trait);
+      const traitKey = !Number.isNaN(traitNum) && traitNum >= 0 && traitNum <= 2
+        ? ["traitElectric", "traitEarth", "traitFire"][traitNum]
+        : (aoka.trait != null ? { electric: "traitElectric", earth: "traitEarth", fire: "traitFire" }[String(aoka.trait).toLowerCase()] : null);
+      if (traitKey) {
+        const badge = document.createElement("span");
+        badge.className = "aoka-trait-badge aoka-trait-" + (traitKey === "traitElectric" ? "electric" : traitKey === "traitEarth" ? "earth" : "fire");
+        badge.textContent = t(traitKey);
+        badge.dataset.traitKey = traitKey;
+        stats.appendChild(badge);
+      }
+      card.append(portrait, name, stats);
+      if (!isDead) {
+        const combatWrap = document.createElement("div");
+        combatWrap.className = "aoka-combat-wrap";
+        const combatIcon = document.createElement("div");
+        combatIcon.className = "aoka-combat-icon";
+        combatWrap.appendChild(combatIcon);
+        card.appendChild(combatWrap);
+      }
+      if (!isDead) {
+        card.addEventListener("click", () => {
+          startBattleInPlace(floorIndex, slot);
+        });
+      } else {
+        const txHash = getTxHashForSlot(floorIndex, slot);
+        if (txHash) {
+          const replayLink = document.createElement("a");
+          replayLink.className = "aoka-replay-btn";
+          replayLink.href = "replay.html#" + encodeURIComponent(txHash);
+          replayLink.title = t("replayBtn");
+          replayLink.setAttribute("aria-label", t("replayBtn"));
+          const replayImg = document.createElement("img");
+          replayImg.src = "assets/env/env_camera.png";
+          replayImg.alt = "";
+          replayImg.width = 72;
+          replayImg.height = 72;
+          replayLink.appendChild(replayImg);
+          replayLink.addEventListener("click", (e) => e.stopPropagation());
+          card.appendChild(replayLink);
+        }
+      }
+      floorAokas.appendChild(card);
+    });
+    const hasShop = floor?.shop && (floor.shop.items?.length > 0 || floor.shop.equipments?.length > 0);
+    const hasFoundry = (floor?.index != null && Number(floor.index) >= 5) && (floor?.foundry != null);
+    const allDead = enemies.length > 0 && enemies.every((e) => Number(e.health) === 0);
+    if (btnShop.querySelector(".shop-name")) btnShop.querySelector(".shop-name").textContent = t("shop");
+    if (btnFoundry.querySelector(".foundry-name")) btnFoundry.querySelector(".foundry-name").textContent = t("foundry");
+    btnNextFloor.textContent = t("nextFloorBtn");
+    btnShop.style.display = hasShop ? "flex" : "none";
+    btnFoundry.style.display = hasFoundry ? "flex" : "none";
+    btnNextFloor.style.display = allDead ? "inline-flex" : "none";
+  } catch (e) {
+    console.error("getFloor error", e);
+  } finally {
+    floorLoadingOverlay?.classList.add("hidden");
+  }
+}
+
+async function onNextFloorClick() {
+  if (!gameContract || !btnNextFloor || btnNextFloor.disabled) return;
+  btnNextFloor.disabled = true;
+  btnNextFloor.textContent = t("confirmingTx");
+  try {
+    const tx = await nextFloor(gameContract);
+    await tx.wait();
+    await loadFloor();
+  } catch (err) {
+    await showModal({ message: (err?.message || err?.shortMessage || String(err)), buttonText: t("modalConfirm") });
+  } finally {
+    btnNextFloor.disabled = false;
+    btnNextFloor.textContent = t("nextFloorBtn");
+  }
+}
+
+function refreshLang() {
+  document.documentElement.lang = getLang() === "zh" ? "zh-CN" : "en";
+  document.title = t("appTitle");
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n");
+    if (key) el.textContent = t(key);
+  });
+  updateHeaderState();
+  if (floorTitle.textContent && lastFloorData?.index != null) {
+    const n = Number(lastFloorData.index) + 1;
+    const bossFloor = isBossFloor(lastFloorData.index);
+    floorTitle.textContent = t("floorN", { n }) + (bossFloor ? " " + t("floorBossSuffix") : "");
+  }
+  if (btnNextFloor && btnNextFloor.style.display !== "none") btnNextFloor.textContent = t("nextFloorBtn");
+  document.querySelectorAll(".lang-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-lang") === getLang());
+  });
+  if (lastFloorData?.enemies && floorAokas) {
+    const bossFloor = lastFloorData.index != null && isBossFloor(lastFloorData.index);
+    floorAokas.querySelectorAll(".aoka-card").forEach((card) => {
+      const slot = parseInt(card.dataset.slot, 10);
+      const aoka = lastFloorData.enemies[slot];
+      if (!aoka) return;
+      const nameEl = card.querySelector(".name");
+      const statsEl = card.querySelector(".stats");
+      if (nameEl) nameEl.textContent = bossFloor ? aokaName(Number(aoka.typ)) : ((aoka.isBoss ? "BOSS " : "") + aokaName(Number(aoka.typ)));
+      if (statsEl) {
+        const first = statsEl.firstElementChild || statsEl.firstChild;
+        if (first) first.textContent = t("statsFormat", { hp: aoka.health, atk: aoka.attack, def: aoka.defense });
+        const badge = statsEl.querySelector(".aoka-trait-badge");
+        if (badge && badge.dataset.traitKey) badge.textContent = t(badge.dataset.traitKey);
+      }
+      const replayLink = card.querySelector(".aoka-replay-btn");
+      if (replayLink) { replayLink.title = t("replayBtn"); replayLink.setAttribute("aria-label", t("replayBtn")); }
+    });
+  }
+  if (gameContract && currentAccount && floorPlayerBar?.style.display === "flex") {
+    Promise.all([
+      getPlayer(gameContract, currentAccount),
+      getAbilitiesExtra(gameContract, currentAccount).catch(() => ({ attack: 0, defense: 0, crit: 0, critChance: 0, blockChance: 0, stunChance: 0 }))
+    ]).then(([player, extra]) => { if (player && extra) updateFloorPlayerBar(player, extra); });
+  }
+  if (equipPanelRoot?.classList.contains("visible")) loadEquipPanelContent();
+  const floorLoadingLabel = floorLoadingOverlay?.querySelector(".aoka-loading > span");
+  if (floorLoadingLabel) floorLoadingLabel.textContent = (t("loading") || "LOADING").toUpperCase();
+}
+
+document.querySelectorAll(".lang-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const lang = btn.getAttribute("data-lang");
+    if (lang) setLang(lang);
+    refreshLang();
+  });
+});
+window.addEventListener("languageChange", () => refreshLang());
+
+connectBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  walletDropdown?.classList.toggle("open");
+});
+walletOptionRonin?.addEventListener("click", async () => {
+  const p = getProvider("ronin");
+  if (p) connectWith(p); else await showModal({ message: t("noRonin"), buttonText: t("modalConfirm") });
+});
+walletOptionMetaMask?.addEventListener("click", async () => {
+  const p = getProvider("metamask");
+  if (p) connectWith(p); else await showModal({ message: t("noMetaMask"), buttonText: t("modalConfirm") });
+});
+disconnectBtn?.addEventListener("click", () => {
+  if (currentProvider) {
+    try { currentProvider.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); } catch (_) {}
+    currentProvider = null;
+  }
+  currentAccount = null;
+  gameContract = null;
+  updateHeaderState();
+  location.href = "index.html";
+});
+document.addEventListener("click", () => walletDropdown?.classList.remove("open"));
+walletDropdown?.addEventListener("click", (e) => e.stopPropagation());
+
+function expNeededForLevel(level) {
+  return 5 * (Number(level) + 1);
+}
+async function loadPlayerTooltip() {
+  if (!gameContract || !currentAccount || !playerTooltip) return;
+  playerTooltip.classList.add("visible");
+  playerTooltip.setAttribute("aria-hidden", "false");
+  const levelEl = document.getElementById("playerTooltipLevel");
+  const hpLabel = document.getElementById("playerTooltipHpLabel");
+  const hpFill = document.getElementById("playerTooltipHpFill");
+  const hpText = document.getElementById("playerTooltipHpText");
+  const expLabel = document.getElementById("playerTooltipExpLabel");
+  const expFill = document.getElementById("playerTooltipExpFill");
+  const expText = document.getElementById("playerTooltipExpText");
+  const attrsEl = document.getElementById("playerTooltipAttrs");
+  try {
+    const [player, extra] = await Promise.all([
+      getPlayer(gameContract, currentAccount),
+      getAbilitiesExtra(gameContract, currentAccount).catch(() => ({ attack: 0, defense: 0, crit: 0, critChance: 0, blockChance: 0, stunChance: 0 }))
+    ]);
+    const level = Number(player?.level ?? 0);
+    const health = Number(player?.health ?? 0);
+    const healthMax = Number(player?.healthMax ?? 100);
+    const exp = Number(player?.experience ?? 0);
+    const needExp = expNeededForLevel(level);
+    if (levelEl) levelEl.textContent = t("playerLevel") + " " + level;
+    if (hpLabel) hpLabel.textContent = t("playerHp");
+    if (hpFill) hpFill.style.width = healthMax ? (health / healthMax * 100) + "%" : "100%";
+    if (hpText) hpText.textContent = health + "/" + healthMax;
+    if (expLabel) expLabel.textContent = t("playerExp");
+    if (expFill) expFill.style.width = needExp ? (exp / needExp * 100) + "%" : "0%";
+    if (expText) expText.textContent = exp + "/" + needExp;
+    const baseAtk = Number(player?.attack ?? 0);
+    const baseDef = Number(player?.defense ?? 0);
+    const attrs = [
+      [t("playerAttack"), baseAtk, extra.attack],
+      [t("playerDefense"), baseDef, extra.defense],
+      [t("playerCrit"), 0, extra.crit],
+      [t("playerCritChance"), 0, extra.critChance],
+      [t("playerBlockChance"), 0, extra.blockChance],
+      [t("playerStunChance"), 0, extra.stunChance]
+    ];
+    if (attrsEl) {
+      attrsEl.innerHTML = attrs.map(([label, base, bonus]) => {
+        const bonusStr = bonus > 0 ? '<span class="attr-bonus">(+' + bonus + ")</span>" : "";
+        return '<div class="attr">' + label + ": " + base + " " + bonusStr + "</div>";
+      }).join("");
+    }
+  } catch (e) {
+    playerTooltip.classList.remove("visible");
+    playerTooltip.setAttribute("aria-hidden", "true");
+  }
+}
+let playerTooltipHideTimer = null;
+function hidePlayerTooltip() {
+  if (playerTooltip) {
+    playerTooltip.classList.remove("visible");
+    playerTooltip.setAttribute("aria-hidden", "true");
+  }
+}
+function scheduleHidePlayerTooltip() {
+  if (playerTooltipHideTimer) clearTimeout(playerTooltipHideTimer);
+  playerTooltipHideTimer = setTimeout(() => {
+    playerTooltipHideTimer = null;
+    hidePlayerTooltip();
+  }, 220);
+}
+walletAddrWrap?.addEventListener("mouseenter", () => {
+  if (playerTooltipHideTimer) { clearTimeout(playerTooltipHideTimer); playerTooltipHideTimer = null; }
+  if (walletConnected?.classList.contains("visible") && gameContract && currentAccount) loadPlayerTooltip();
+});
+walletAddrWrap?.addEventListener("mouseleave", scheduleHidePlayerTooltip);
+playerTooltip?.addEventListener("mouseenter", () => {
+  if (playerTooltipHideTimer) { clearTimeout(playerTooltipHideTimer); playerTooltipHideTimer = null; }
+});
+playerTooltip?.addEventListener("mouseleave", () => { scheduleHidePlayerTooltip(); });
+
+function closeEquipPanel() {
+  if (equipPanelRoot) {
+    equipPanelRoot.classList.remove("visible");
+    equipPanelRoot.setAttribute("aria-hidden", "true");
+  }
+}
+async function loadEquipPanelContent() {
+  if (!gameContract || !currentAccount || !equipPanelAttrs || !equipPanelSlots) return;
+  const PUPPET_ID_START = 4_000_000_000;
+  equipPanelAttrs.innerHTML = "";
+  equipPanelSlots.innerHTML = "";
+  const loadingEl = createLoading();
+  loadingEl.style.marginTop = "24px";
+  const loadingWrap = document.createElement("div");
+  loadingWrap.style.display = "flex";
+  loadingWrap.style.justifyContent = "center";
+  loadingWrap.style.width = "100%";
+  loadingWrap.appendChild(loadingEl);
+  equipPanelAttrs.appendChild(loadingWrap);
+  try {
+    const [player, extra, equippedIdsRaw] = await Promise.all([
+      getPlayer(gameContract, currentAccount),
+      getAbilitiesExtra(gameContract, currentAccount).catch(() => ({ attack: 0, defense: 0, crit: 0, critChance: 0, blockChance: 0, stunChance: 0 })),
+      getEquippedIds(gameContract, currentAccount)
+    ]);
+    const baseAtk = Number(player?.attack ?? 0);
+    const baseDef = Number(player?.defense ?? 0);
+    const attrs = [
+      [t("playerAttack"), baseAtk, extra.attack, "playerAttackDesc"],
+      [t("playerDefense"), baseDef, extra.defense, "playerDefenseDesc"],
+      [t("playerCrit"), 0, extra.crit, "playerCritDesc"],
+      [t("playerCritChance"), 0, extra.critChance, "playerCritChanceDesc"],
+      [t("playerBlockChance"), 0, extra.blockChance, "playerBlockChanceDesc"],
+      [t("playerStunChance"), 0, extra.stunChance, "playerStunChanceDesc"]
+    ];
+    const attrsHtml = attrs.map(([label, base, bonus, descKey]) => {
+      const bonusStr = bonus > 0 ? '<span class="attr-bonus"> +' + bonus + "</span>" : "";
+      const desc = descKey ? t(descKey) : "";
+      return '<div class="attr-row"><div class="attr">' + label + ": " + base + bonusStr + '</div><div class="attr-desc">' + desc + "</div></div>";
+    }).join("");
+
+    const equippedArr = Array.isArray(equippedIdsRaw) ? equippedIdsRaw.map((v) => Number(v)) : [0, 0, 0, 0];
+    const allIds = equippedArr.filter((id) => id && id > 0);
+    const equipmentIdSet = new Set();
+    const puppetIdSet = new Set();
+    allIds.forEach((id) => {
+      if (id >= PUPPET_ID_START) puppetIdSet.add(id);
+      else equipmentIdSet.add(id);
+    });
+    const [equipmentMap, puppetMap] = await Promise.all([
+      equipmentIdSet.size ? getEquipments(gameContract, Array.from(equipmentIdSet)) : Promise.resolve({}),
+      puppetIdSet.size ? getPuppets(gameContract, Array.from(puppetIdSet)) : Promise.resolve({})
+    ]);
+
+    const slotDefs = [
+      { slotIndex: 0, label: t("equipSword") },
+      { slotIndex: 2, label: t("equipShield") },
+      { slotIndex: 1, label: t("equipArmor") },
+      { slotIndex: 3, label: t("equipPuppet") }
+    ];
+
+    equipPanelAttrs.innerHTML = attrsHtml;
+    equipPanelSlots.innerHTML = "";
+    slotDefs.forEach((conf) => {
+      const eqId = Number(equippedArr[conf.slotIndex] ?? 0);
+      const slot = document.createElement("div");
+      slot.className = "equip-panel-slot" + (eqId ? "" : " empty");
+      if (eqId) {
+        slot.dataset.id = String(eqId);
+        const idStr = String(eqId);
+        if (eqId >= PUPPET_ID_START) {
+          const puppet = puppetMap[idStr];
+          const rarityIdx = puppet ? Number(puppet.rarity ?? 0) : -1;
+          const rarityLabel = rarityIdx >= 0 ? getRarityLabel(rarityIdx) : "";
+          slot.title = rarityLabel ? `${t("equipPuppet")} (${rarityLabel}) #${eqId}` : `${t("equipPuppet")} #${eqId}`;
+          const labelSpan = document.createElement("span");
+          labelSpan.className = "equip-panel-slot-label";
+          labelSpan.textContent = t("equipPuppet");
+          slot.appendChild(labelSpan);
+        } else {
+          const eq = equipmentMap[idStr];
+          const name = eq ? getEquipmentDisplayName(eq) : `ID ${eqId}`;
+          slot.title = name;
+          const imgUrl = eq ? getEquipmentImageUrl(eq) : "";
+          if (imgUrl) {
+            const img = document.createElement("img");
+            img.src = imgUrl;
+            img.alt = "";
+            slot.appendChild(img);
+          }
+        }
+        slot.addEventListener("click", () => { if (eqId) onUnequip(eqId, slot); });
+      } else {
+        slot.title = conf.label;
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "equip-panel-slot-label";
+        labelSpan.textContent = conf.label;
+        slot.appendChild(labelSpan);
+      }
+      equipPanelSlots.appendChild(slot);
+    });
+  } catch (e) {
+    equipPanelAttrs.innerHTML = "";
+    equipPanelSlots.innerHTML = t("callFailed");
+  }
+}
+async function openEquipPanel() {
+  if (!gameContract || !currentAccount || !equipPanelRoot) return;
+  if (equipPanelTitle) equipPanelTitle.textContent = t("equipPanelTitle");
+  if (equipPanelClose) equipPanelClose.textContent = t("shopClose");
+  equipPanelRoot.classList.add("visible");
+  equipPanelRoot.setAttribute("aria-hidden", "false");
+  await loadEquipPanelContent();
+}
+
+floorPlayerAvatarBtn?.addEventListener("click", () => openEquipPanel());
+equipPanelBackdrop?.addEventListener("click", closeEquipPanel);
+equipPanelClose?.addEventListener("click", closeEquipPanel);
+
+btnNextFloor?.addEventListener("click", onNextFloorClick);
+
+function getRarityLabel(rarityNum) {
+  const key = ["rarityC", "rarityB", "rarityA", "rarityS"][Number(rarityNum)] || "rarityC";
+  return t(key);
+}
+function getItemDisplayName(itemId) {
+  const id = Number(itemId);
+  if (id >= 1 && id <= 4) return t("itemBook");
+  if (id >= 101 && id <= 104) return t("itemPotion");
+  return "Item " + id;
+}
+function getItemRarityLabel(itemId) {
+  const id = Number(itemId);
+  if (id >= 1 && id <= 4) return getRarityLabel(id - 1);
+  if (id >= 101 && id <= 104) return getRarityLabel(id - 101);
+  return "";
+}
+function getItemImageUrl(itemId) {
+  const id = Number(itemId);
+  if (id >= 1 && id <= 4) return "assets/items/item_book.png";
+  if (id >= 101 && id <= 104) return "assets/items/item_potion.png";
+  return "";
+}
+function getRarityImageUrl(itemId) {
+  const id = Number(itemId);
+  let r = -1;
+  if (id >= 1 && id <= 4) r = id - 1;
+  else if (id >= 101 && id <= 104) r = id - 101;
+  if (r < 0) return "";
+  const letter = ["c", "b", "a", "s"][r] || "c";
+  return "assets/rarity/" + letter + ".png";
+}
+function isBookOrPotion(itemId) {
+  const id = Number(itemId);
+  return (id >= 1 && id <= 4) || (id >= 101 && id <= 104);
+}
+function getItemDescription(itemId) {
+  const id = Number(itemId);
+  if (id >= 1 && id <= 4) return t("itemBookDesc");
+  if (id >= 101 && id <= 104) return t("itemPotionDesc");
+  return "";
+}
+function getEquipmentDisplayName(eq) {
+  const typeKey = ["equipSword", "equipArmor", "equipShield"][Number(eq?.etype ?? 0)] || "equipSword";
+  const matKey = ["materialWooden", "materialIron", "materialObsidian"][Number(eq?.materials ?? 0)] || "materialIron";
+  const rarity = getRarityLabel(Number(eq?.rarity ?? 0));
+  const level = Number(eq?.level ?? 0);
+  return t(typeKey) + " " + t(matKey) + " " + rarity + " Lv." + level;
+}
+function getEquipmentImageUrl(eq) {
+  if (!eq) return "";
+  const typeIdx = Number(eq.etype ?? 0);
+  const matIdx = Number(eq.materials ?? 0);
+  const typeKey = typeIdx === 0 ? "sword" : (typeIdx === 1 ? "armor" : "shield");
+  const matKey = ["wooden", "iron", "obsidian"][matIdx] || "wooden";
+  return "assets/equipment/" + typeKey + "_" + matKey + ".png";
+}
+function closeShopModal() {
+  if (shopModalRoot) {
+    shopModalRoot.classList.remove("visible");
+    shopModalRoot.setAttribute("aria-hidden", "true");
+  }
+}
+function renderShopList(floor) {
+  if (!shopModalList || !floor?.shop) return;
+  shopModalList.innerHTML = "";
+  const shop = floor.shop;
+  const items = shop.items || [];
+  const prices = shop.price || [];
+  for (let i = 0; i < items.length; i++) {
+    const itemId = Number(items[i]);
+    if (itemId === 0) continue;
+    const price = prices[i] != null ? String(prices[i]) : "0";
+    const imgUrl = getItemImageUrl(itemId);
+    const rarityUrl = getRarityImageUrl(itemId);
+    const useBigIcon = imgUrl && isBookOrPotion(itemId);
+    const rarityIdx = isBookOrPotion(itemId) ? (itemId >= 101 ? itemId - 101 : itemId - 1) : -1;
+    const glowClass = rarityIdx >= 0 ? ["item-c-glow", "item-b-glow", "item-a-glow", "item-s-glow"][rarityIdx] || "" : "";
+    const iconHtml = useBigIcon
+      ? `<div class="shop-modal-row-icon-wrap"><img class="shop-modal-row-icon shop-modal-row-icon--item ${glowClass}" src="${imgUrl}" alt="">${rarityUrl ? `<img class="shop-modal-row-rarity" src="${rarityUrl}" alt="">` : ""}</div>`
+      : (imgUrl ? `<img class="shop-modal-row-icon ${glowClass}" src="${imgUrl}" alt="">` : "");
+    const itemDesc = getItemDescription(itemId);
+    const rarityLine = isBookOrPotion(itemId) ? getItemRarityLabel(itemId) : "";
+    const textBlock = itemDesc
+      ? `<div class="shop-modal-row-text"><span class="shop-modal-row-name">${getItemDisplayName(itemId)}</span>${rarityLine ? `<span class="shop-modal-row-rarity-line">${t("rarityLabel")} ${rarityLine}</span>` : ""}<span class="shop-modal-row-desc">${itemDesc}</span></div>`
+      : `<span class="shop-modal-row-name">${getItemDisplayName(itemId)}</span>`;
+    const row = document.createElement("div");
+    row.className = "shop-modal-row";
+    row.innerHTML = `
+      <div class="shop-modal-row-name-wrap">
+        ${iconHtml}
+        ${textBlock}
+      </div>
+      <span class="shop-modal-row-price">${price} ${t("coinUnit")}</span>
+      <button type="button" data-type="0" data-slot="${i}">${t("buyBtn")}</button>
+    `;
+    const buyBtn = row.querySelector("button");
+    buyBtn.addEventListener("click", () => onShopBuy(0, i, buyBtn));
+    shopModalList.appendChild(row);
+  }
+  const equipments = shop.equipments || [];
+  const eqPrices = shop.equipmentPrices || [];
+  for (let i = 0; i < equipments.length; i++) {
+    const eq = equipments[i];
+    if (eq && Number(eq.level) === 0) continue;
+    const price = eqPrices[i] != null ? String(eqPrices[i]) : "0";
+    const row = document.createElement("div");
+    row.className = "shop-modal-row";
+    row.innerHTML = `
+      <span class="shop-modal-row-name">${getEquipmentDisplayName(eq)}</span>
+      <span class="shop-modal-row-price">${price}${t("coinUnit")}</span>
+      <button type="button" data-type="1" data-slot="${i}">${t("buyBtn")}</button>
+    `;
+    const buyBtnEq = row.querySelector("button");
+    buyBtnEq.addEventListener("click", () => onShopBuy(1, i, buyBtnEq));
+    shopModalList.appendChild(row);
+  }
+}
+async function openShopModal() {
+  if (!gameContract || !currentAccount) return;
+  try {
+    const floor = await getFloor(gameContract, currentAccount);
+    if (!floor?.shop || ((!floor.shop.items || floor.shop.items.length === 0) && (!floor.shop.equipments || floor.shop.equipments.length === 0))) return;
+    const hasAny = (floor.shop.items?.length > 0 && floor.shop.items.some((id) => Number(id) !== 0))
+      || (floor.shop.equipments?.length > 0 && floor.shop.equipments.some((eq) => eq && Number(eq.level) !== 0));
+    if (!hasAny) return;
+    if (shopModalTitle) shopModalTitle.textContent = t("shopTitle");
+    renderShopList(floor);
+    if (shopModalClose) shopModalClose.textContent = t("shopClose");
+    if (shopModalRoot) {
+      shopModalRoot.classList.add("visible");
+      shopModalRoot.setAttribute("aria-hidden", "false");
+    }
+  } catch (e) {
+    console.error("openShopModal", e);
+  }
+}
+async function onShopBuy(typeIndex, slot, btn) {
+  if (!gameContract) return;
+  if (btn && btn.tagName === "BUTTON") {
+    btn.disabled = true;
+    btn.textContent = t("confirmingTx");
+  }
+  try {
+    const tx = await buy(gameContract, typeIndex, slot);
+    await tx.wait();
+    await showModal({ title: "", message: t("buySuccess"), buttonText: t("modalConfirm") });
+    closeShopModal();
+    await loadFloor();
+  } catch (err) {
+    const msg = (err?.message || err?.shortMessage || String(err)) || t("buyFailed");
+    await showModal({ message: t("buyFailed") + ": " + msg, buttonText: t("modalConfirm") });
+  } finally {
+    if (btn && btn.tagName === "BUTTON") {
+      btn.disabled = false;
+      btn.textContent = t("buyBtn");
+    }
+  }
+}
+btnShop?.addEventListener("click", openShopModal);
+shopModalClose?.addEventListener("click", closeShopModal);
+const shopModalBackdrop = document.querySelector(".shop-modal-backdrop");
+shopModalBackdrop?.addEventListener("click", closeShopModal);
+
+function closeBagModal() {
+  if (bagModalRoot) {
+    bagModalRoot.classList.remove("visible");
+    bagModalRoot.setAttribute("aria-hidden", "true");
+  }
+}
+
+async function renderBagModal() {
+  if (!bagModalList || !gameContract || !currentAccount) return;
+  bagModalList.innerHTML = `<div class="shop-modal-row">${t("loading")}</div>`;
+  const PUPPET_ID_START = 4_000_000_000;
+  try {
+    const [bag, warehouse, equippedIdsRaw] = await Promise.all([
+      getBag(gameContract, currentAccount),
+      getWarehouse(gameContract, currentAccount),
+      getEquippedIds(gameContract, currentAccount)
+    ]);
+    const bagNums = Array.isArray(bag) ? bag.map((v) => Number(v)) : [];
+    const warehouseIds = Array.isArray(warehouse) ? warehouse.map((v) => Number(v)) : [];
+    const equippedArr = Array.isArray(equippedIdsRaw) ? equippedIdsRaw.map((v) => Number(v)) : [0, 0, 0, 0];
+
+    const allIds = [...warehouseIds, ...equippedArr].filter((id) => id && id > 0);
+    const equipmentIdSet = new Set();
+    const puppetIdSet = new Set();
+    allIds.forEach((id) => {
+      if (id >= PUPPET_ID_START) puppetIdSet.add(id);
+      else equipmentIdSet.add(id);
+    });
+    const equipmentIds = Array.from(equipmentIdSet);
+    const puppetIds = Array.from(puppetIdSet);
+
+    const [equipmentMap, puppetMap] = await Promise.all([
+      equipmentIds.length ? getEquipments(gameContract, equipmentIds) : Promise.resolve({}),
+      puppetIds.length ? getPuppets(gameContract, puppetIds) : Promise.resolve({})
+    ]);
+
+    bagModalBagNums = bagNums;
+    bagModalWarehouseIds = warehouseIds;
+    bagModalEquipmentMap = equipmentMap;
+    bagModalPuppetMap = puppetMap;
+
+    bagModalList.innerHTML = "";
+
+    const equippedWrap = document.createElement("div");
+    equippedWrap.className = "bag-modal-equipped";
+    const slotsCol = document.createElement("div");
+    slotsCol.className = "bag-equipped-slots";
+    const slotDefs = [
+      { slotIndex: 0, label: t("equipSword"), cls: "bag-equipped-slot--sword" },
+      { slotIndex: 2, label: t("equipShield"), cls: "bag-equipped-slot--shield" },
+      { slotIndex: 1, label: t("equipArmor"), cls: "bag-equipped-slot--armor" },
+      { slotIndex: 3, label: t("equipPuppet"), cls: "bag-equipped-slot--puppet" }
+    ];
+    slotDefs.forEach((conf) => {
+      const eqId = Number(equippedArr[conf.slotIndex] ?? 0);
+      const slot = document.createElement("div");
+      slot.className = "bag-equipped-slot" + (eqId ? "" : " empty") + (conf.cls ? " " + conf.cls : "");
+      if (eqId) {
+        slot.dataset.id = String(eqId);
+        const idStr = String(eqId);
+        if (eqId >= PUPPET_ID_START) {
+          const puppet = puppetMap[idStr];
+          const rarityIdx = puppet ? Number(puppet.rarity ?? 0) : -1;
+          const rarityLabel = rarityIdx >= 0 ? getRarityLabel(rarityIdx) : "";
+          slot.title = rarityLabel ? `${t("equipPuppet")} (${rarityLabel}) #${eqId}` : `${t("equipPuppet")} #${eqId}`;
+        } else {
+          const eq = equipmentMap[idStr];
+          const name = eq ? getEquipmentDisplayName(eq) : `ID ${eqId}`;
+          slot.title = name;
+          const imgUrl = eq ? getEquipmentImageUrl(eq) : "";
+          if (imgUrl) {
+            const img = document.createElement("img");
+            img.src = imgUrl;
+            img.alt = "";
+            const rarityIdx = eq ? Number(eq.rarity ?? 0) : -1;
+            if (rarityIdx >= 0) {
+              const glowClassImg = ["item-c-glow", "item-b-glow", "item-a-glow", "item-s-glow"][rarityIdx] || "";
+              if (glowClassImg) img.classList.add(glowClassImg);
+            }
+            slot.appendChild(img);
+          }
+        }
+        slot.addEventListener("click", () => {
+          if (eqId) onUnequip(eqId, slot);
+        });
+      } else {
+        slot.title = conf.label;
+      }
+      slotsCol.appendChild(slot);
+    });
+    equippedWrap.appendChild(slotsCol);
+    bagModalList.appendChild(equippedWrap);
+
+    const tabs = document.createElement("div");
+    tabs.className = "bag-modal-tabs";
+    const tabBag = document.createElement("button");
+    tabBag.type = "button";
+    tabBag.className = "bag-modal-tab" + (bagModalActiveTab === "bag" ? " active" : "");
+    tabBag.textContent = t("bagTabBag");
+    const tabWh = document.createElement("button");
+    tabWh.type = "button";
+    tabWh.className = "bag-modal-tab" + (bagModalActiveTab === "warehouse" ? " active" : "");
+    tabWh.textContent = t("bagTabWarehouse");
+    tabBag.addEventListener("click", () => {
+      if (bagModalActiveTab !== "bag") {
+        bagModalActiveTab = "bag";
+        tabBag.classList.add("active");
+        tabWh.classList.remove("active");
+        renderBagModalGrid();
+      }
+    });
+    tabWh.addEventListener("click", () => {
+      if (bagModalActiveTab !== "warehouse") {
+        bagModalActiveTab = "warehouse";
+        tabWh.classList.add("active");
+        tabBag.classList.remove("active");
+        renderBagModalGrid();
+      }
+    });
+    tabs.append(tabBag, tabWh);
+    bagModalList.appendChild(tabs);
+
+    bagModalBodyEl = document.createElement("div");
+    bagModalBodyEl.className = "bag-modal-body";
+    bagModalList.appendChild(bagModalBodyEl);
+
+    renderBagModalGrid();
+  } catch (e) {
+    console.error("renderBagModal", e);
+    bagModalList.innerHTML = `<div class="shop-modal-row"><span class="shop-modal-row-desc">${t("callFailed")}</span></div>`;
+  }
+}
+
+function renderBagModalGrid() {
+  if (!bagModalBodyEl) return;
+  const PUPPET_ID_START = 4_000_000_000;
+  bagModalBodyEl.innerHTML = "";
+
+  const gridWrap = document.createElement("div");
+  gridWrap.className = "bag-modal-grid-wrap";
+  const grid = document.createElement("div");
+  grid.className = "bag-modal-grid";
+
+  if (bagModalActiveTab === "bag") {
+    const bagItems = [];
+    bagModalBagNums.forEach((itemId, slot) => {
+      if (!itemId) return;
+      bagItems.push({ itemId, slot });
+    });
+    if (bagItems.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "bag-modal-empty-text";
+      empty.textContent = t("bagEmpty");
+      bagModalBodyEl.appendChild(empty);
+      return;
+    }
+    bagItems.forEach(({ itemId, slot }) => {
+      const cell = document.createElement("div");
+      const rarityIdx = isBookOrPotion(itemId) ? (itemId >= 101 ? itemId - 101 : itemId - 1) : -1;
+      const glowClass = rarityIdx >= 0 ? ["item-c-glow", "item-b-glow", "item-a-glow", "item-s-glow"][rarityIdx] || "" : "";
+      cell.className = "bag-grid-cell";
+      const imgUrl = getItemImageUrl(itemId);
+      const rarityUrl = getRarityImageUrl(itemId);
+      if (imgUrl) {
+        const img = document.createElement("img");
+        img.src = imgUrl;
+        img.alt = "";
+        if (glowClass) img.classList.add(glowClass);
+        cell.appendChild(img);
+      }
+      if (rarityUrl) {
+        const rimg = document.createElement("img");
+        rimg.src = rarityUrl;
+        rimg.alt = "";
+        rimg.className = "bag-grid-cell-rarity";
+        cell.appendChild(rimg);
+      }
+      const name = getItemDisplayName(itemId);
+      const rarity = getItemRarityLabel(itemId);
+      const desc = getItemDescription(itemId);
+      const parts = [name];
+      if (rarity) parts.push(`${t("rarityLabel")} ${rarity}`);
+      if (desc) parts.push(desc);
+      cell.title = parts.join("\n");
+      cell.addEventListener("click", async () => {
+        if (!isBookOrPotion(itemId)) {
+          await showModal({ message: t("useItemNotUsable"), buttonText: t("modalConfirm") });
+          return;
+        }
+        onUseItem(slot, null);
+      });
+      grid.appendChild(cell);
+    });
+  } else {
+    const whItems = [];
+    bagModalWarehouseIds.forEach((id) => {
+      if (!id) return;
+      whItems.push(id);
+    });
+    if (whItems.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "bag-modal-empty-text";
+      empty.textContent = t("equipEmpty");
+      bagModalBodyEl.appendChild(empty);
+      return;
+    }
+    whItems.forEach((id) => {
+      const cell = document.createElement("div");
+      let rarityIdx = -1;
+      cell.className = "bag-grid-cell";
+      const idStr = String(id);
+      let title = `ID ${id}`;
+      if (id >= PUPPET_ID_START) {
+        const puppet = bagModalPuppetMap[idStr];
+        rarityIdx = puppet ? Number(puppet.rarity ?? 0) : -1;
+        const rarity = rarityIdx >= 0 ? getRarityLabel(rarityIdx) : "";
+        title = rarity ? `${t("equipPuppet")} (${rarity}) #${id}` : `${t("equipPuppet")} #${id}`;
+      } else {
+        const eq = bagModalEquipmentMap[idStr];
+        if (eq) {
+          title = getEquipmentDisplayName(eq);
+          rarityIdx = Number(eq.rarity ?? 0);
+          const imgUrl = getEquipmentImageUrl(eq);
+          if (imgUrl) {
+            const img = document.createElement("img");
+            img.src = imgUrl;
+            img.alt = "";
+            if (rarityIdx >= 0) {
+              const glowClassImg = ["item-c-glow", "item-b-glow", "item-a-glow", "item-s-glow"][rarityIdx] || "";
+              if (glowClassImg) img.classList.add(glowClassImg);
+            }
+            cell.appendChild(img);
+          }
+        }
+      }
+      cell.title = title;
+      if (rarityIdx >= 0) {
+        const letter = ["c", "b", "a", "s"][rarityIdx] || "c";
+        const rimg = document.createElement("img");
+        rimg.src = "assets/rarity/" + letter + ".png";
+        rimg.alt = "";
+        rimg.className = "bag-grid-cell-rarity";
+        cell.appendChild(rimg);
+      }
+      cell.addEventListener("click", () => {
+        onEquip(id, null);
+      });
+      grid.appendChild(cell);
+    });
+  }
+
+  if (grid.children.length > 0) {
+    gridWrap.appendChild(grid);
+    bagModalBodyEl.appendChild(gridWrap);
+  }
+}
+
+async function openBagModal() {
+  if (!gameContract || !currentAccount) return;
+  if (bagModalTitle) bagModalTitle.textContent = t("bagTitle");
+  if (bagModalClose) bagModalClose.textContent = t("shopClose");
+  if (bagModalRoot) {
+    bagModalRoot.classList.add("visible");
+    bagModalRoot.setAttribute("aria-hidden", "false");
+  }
+  await renderBagModal();
+}
+
+async function onUseItem(slot, btn) {
+  if (!gameContract) return;
+  if (btn && btn.tagName === "BUTTON") {
+    btn.disabled = true;
+    btn.textContent = t("confirmingTx");
+  }
+  try {
+    const tx = await useItems(gameContract, [slot]);
+    await tx.wait();
+    await showModal({ title: "", message: t("useItemSuccess"), buttonText: t("modalConfirm") });
+    await renderBagModal();
+    await loadPlayerTooltip();
+  } catch (err) {
+    const msg = (err?.message || err?.shortMessage || String(err)) || t("useItemFailed");
+    await showModal({ message: t("useItemFailed") + ": " + msg, buttonText: t("modalConfirm") });
+  } finally {
+    if (btn && btn.tagName === "BUTTON") {
+      btn.disabled = false;
+      btn.textContent = t("useItemBtn");
+    }
+  }
+}
+
+async function onEquip(equipmentId, btn) {
+  if (!gameContract) return;
+  if (btn && btn.tagName === "BUTTON") {
+    btn.disabled = true;
+    btn.textContent = t("confirmingTx");
+  }
+  try {
+    const tx = await equip(gameContract, equipmentId);
+    await tx.wait();
+    await showModal({ title: "", message: t("equipSuccess"), buttonText: t("modalConfirm") });
+    await renderBagModal();
+    await loadPlayerTooltip();
+    if (equipPanelRoot?.classList.contains("visible")) await loadEquipPanelContent();
+    const [player, extra] = await Promise.all([
+      getPlayer(gameContract, currentAccount),
+      getAbilitiesExtra(gameContract, currentAccount).catch(() => ({ attack: 0, defense: 0, crit: 0, critChance: 0, blockChance: 0, stunChance: 0 }))
+    ]).catch(() => [null, null]);
+    if (player && extra) updateFloorPlayerBar(player, extra);
+  } catch (err) {
+    const msg = (err?.message || err?.shortMessage || String(err)) || t("equipFailed");
+    await showModal({ message: t("equipFailed") + ": " + msg, buttonText: t("modalConfirm") });
+  } finally {
+    if (btn && btn.tagName === "BUTTON") {
+      btn.disabled = false;
+      btn.textContent = t("equipBtn");
+    }
+  }
+}
+
+async function onUnequip(equipmentId, el) {
+  if (!gameContract) return;
+  const isButton = el && el.tagName === "BUTTON";
+  if (isButton) {
+    el.disabled = true;
+    el.textContent = t("confirmingTx");
+  }
+  try {
+    const tx = await unequip(gameContract, equipmentId);
+    await tx.wait();
+    await showModal({ title: "", message: t("unequipSuccess"), buttonText: t("modalConfirm") });
+    await renderBagModal();
+    await loadPlayerTooltip();
+    if (equipPanelRoot?.classList.contains("visible")) await loadEquipPanelContent();
+    const [player, extra] = await Promise.all([
+      getPlayer(gameContract, currentAccount),
+      getAbilitiesExtra(gameContract, currentAccount).catch(() => ({ attack: 0, defense: 0, crit: 0, critChance: 0, blockChance: 0, stunChance: 0 }))
+    ]).catch(() => [null, null]);
+    if (player && extra) updateFloorPlayerBar(player, extra);
+  } catch (err) {
+    const msg = (err?.message || err?.shortMessage || String(err)) || t("unequipFailed");
+    await showModal({ message: t("unequipFailed") + ": " + msg, buttonText: t("modalConfirm") });
+  } finally {
+    if (isButton) {
+      el.disabled = false;
+      el.textContent = t("unequipBtn");
+    }
+  }
+}
+
+const bagModalBackdrop = bagModalRoot?.querySelector(".shop-modal-backdrop");
+bagModalClose?.addEventListener("click", closeBagModal);
+bagModalBackdrop?.addEventListener("click", closeBagModal);
+playerTooltipBag?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  openBagModal();
+});
+
+async function connectWith(provider) {
+  if (!provider) return;
+  walletDropdown?.classList.remove("open");
+  if (connectBtn) { connectBtn.disabled = true; connectBtn.textContent = t("connecting"); }
+  try {
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: RONIN_CHAIN_ID_HEX }] }).catch(() =>
+      provider.request({ method: "wallet_addEthereumChain", params: [roninParams] })
+    );
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    currentAccount = accounts?.[0] || null;
+    currentProvider = provider;
+    if (window.ethers && provider) {
+      const ethersProvider = new window.ethers.BrowserProvider(provider);
+      const signer = await ethersProvider.getSigner();
+      gameContract = await getGameContract(signer);
+    }
+    updateHeaderState();
+    await loadFloor();
+  } catch (err) {
+    await showModal({ message: t("connectFailed") + ": " + (err?.message || err?.shortMessage || String(err)), buttonText: t("modalConfirm") });
+  } finally {
+    if (connectBtn) { connectBtn.disabled = false; connectBtn.textContent = t("connectWallet"); }
+  }
+}
+
+function parseChainId(v) {
+  if (v == null) return null;
+  if (typeof v === "number") return v;
+  const s = String(v);
+  return s.startsWith("0x") ? parseInt(s, 16) : parseInt(s, 10);
+}
+
+async function tryRestoreConnection() {
+  const providers = [{ name: "ronin", p: getProvider("ronin") }, { name: "metamask", p: getProvider("metamask") }];
+  for (const { p } of providers) {
+    if (!p) continue;
+    try {
+      const [accounts, chainId] = await Promise.all([
+        p.request({ method: "eth_accounts" }),
+        p.request({ method: "eth_chainId" })
+      ]);
+      if (accounts?.length > 0 && parseChainId(chainId) === RONIN_CHAIN_ID_NUM) {
+        currentAccount = accounts[0];
+        currentProvider = p;
+        if (window.ethers && p) {
+          const ethersProvider = new window.ethers.BrowserProvider(p);
+          const signer = await ethersProvider.getSigner();
+          gameContract = await getGameContract(signer);
+        }
+        updateHeaderState();
+        await loadFloor();
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
+(async function init() {
+  initLang();
+  refreshLang();
+  if (floorLoadingOverlay) {
+    floorLoadingOverlay.innerHTML = "";
+    const loadingEl = createLoading({ text: t("loading") });
+    floorLoadingOverlay.appendChild(loadingEl);
+  }
+  const hasRonin = !!getProvider("ronin");
+  const hasMetaMask = !!getProvider("metamask");
+  if (walletOptionRonin) walletOptionRonin.disabled = !hasRonin;
+  if (walletOptionMetaMask) walletOptionMetaMask.disabled = !hasMetaMask;
+  if (connectBtn) connectBtn.disabled = !hasRonin && !hasMetaMask;
+
+  let restored = await tryRestoreConnection();
+  if (!restored && !getProvider("ronin") && !getProvider("metamask")) {
+    await new Promise((r) => setTimeout(r, 300));
+    if (getProvider("ronin") || getProvider("metamask")) restored = await tryRestoreConnection();
+  }
+  if (restored) {
+    updateHeaderState();
+    const bornYet = gameContract && currentAccount && await isBorn(gameContract, currentAccount);
+    if (!bornYet) location.replace("index.html");
+  } else {
+    location.replace("index.html");
+  }
+})();
+
+const ethRonin = getProvider("ronin");
+const ethMetaMask = getProvider("metamask");
+function onAccountsChanged(newAccounts) {
+  const accounts = Array.isArray(newAccounts) ? newAccounts : [];
+  if (accounts.length === 0) {
+    if (currentAccount) {
+      currentAccount = null;
+      gameContract = null;
+      currentProvider = null;
+      updateHeaderState();
+      location.href = "index.html";
+    }
+    return;
+  }
+  const primary = accounts[0];
+  if (currentAccount && (primary === currentAccount || accounts.includes(currentAccount))) {
+    currentAccount = primary;
+    updateHeaderState();
+    loadFloor();
+    return;
+  }
+  currentAccount = null;
+  gameContract = null;
+  currentProvider = null;
+  updateHeaderState();
+  location.href = "index.html";
+}
+if (ethRonin) { ethRonin.on?.("accountsChanged", onAccountsChanged); ethRonin.on?.("chainChanged", () => loadFloor()); }
+if (ethMetaMask && ethMetaMask !== ethRonin) { ethMetaMask.on?.("accountsChanged", onAccountsChanged); ethMetaMask.on?.("chainChanged", () => loadFloor()); }
+

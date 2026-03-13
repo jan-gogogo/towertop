@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>战斗重放 - Tower Top</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="css/battle.css" />
+    <link rel="stylesheet" href="css/common.css" />
+    <link rel="stylesheet" href="css/floor.css" />
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050816;
+        --text-main: #e5e7eb;
+        --text-muted: #9ca3af;
+        --accent: #38bdf8;
+        --danger: #f97373;
+      }
+      .replay-content {
+        padding: 10px;
+        background-image: url("assets/backgrounds/bg_tower_battle.png");
+        background-size: cover;
+        background-position: center top;
+        background-repeat: no-repeat;
+      }
+      .shell {
+        max-width: 1280px;
+        margin: 0 auto;
+        width: 100%;
+      }
+      .replay-title-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .replay-title { font-size: 18px; font-weight: 600; }
+      .back-link { color: var(--accent); text-decoration: none; font-size: 14px; }
+      .back-link:hover { text-decoration: underline; }
+      .replay-form {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .replay-form .back-link {
+        margin-left: auto;
+      }
+      .replay-form label { font-size: 14px; color: var(--text-muted); }
+      .replay-form input {
+        flex: 1;
+        min-width: 200px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(148,163,184,0.4);
+        background: rgba(15,23,42,0.8);
+        color: var(--text-main);
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+      }
+      .replay-form button {
+        padding: 10px 20px;
+        border-radius: 999px;
+        border: none;
+        background: var(--accent);
+        color: #0b1120;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .replay-form button:hover { opacity: 0.9; }
+      .replay-form button:disabled { opacity: 0.5; cursor: default; }
+      .replay-error {
+        color: var(--danger);
+        font-size: 13px;
+        margin-top: 8px;
+        padding: 12px 16px;
+        background: rgba(249, 115, 115, 0.12);
+        border: 1px solid rgba(249, 115, 115, 0.4);
+        border-radius: 10px;
+        min-height: 20px;
+      }
+      /* Match in-game battle view size */
+      #battleContainer {
+        width: 100%;
+        min-height: min(85vh, 800px);
+      }
+      #battleContainer .battle-stage {
+        min-height: min(85vh, 800px);
+      }
+    </style>
+  </head>
+  <body class="body-with-fixed-header">
+    <div id="appHeader"></div>
+    <div class="replay-content">
+      <div class="shell">
+      <div class="replay-form">
+        <label for="txHash" id="txHashLabel" data-i18n="txHashLabel">交易哈希 (txHash)：</label>
+        <input type="text" id="txHash" autocomplete="off" />
+        <button type="button" id="btnReplay" data-i18n="replayBtn">重放</button>
+        <a class="back-link" href="index.html" id="backToGame" data-i18n="backToGame">← 返回游戏</a>
+      </div>
+      <p id="replayError" class="replay-error" style="display:none;"></p>
+      <div id="battleContainer"></div>
+    </div>
+
+    <script>
+      (function () {
+        var el = document.getElementById("replayError");
+        function show(msg) {
+          if (el) {
+            el.textContent = msg || "";
+            el.style.display = (msg && msg.length) ? "block" : "none";
+            if (msg) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        }
+        window.addEventListener("error", function (e) {
+          show("加载错误: " + (e.message || e.reason || String(e)));
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          show("未处理的错误: " + (e.reason && (e.reason.message || e.reason.shortMessage || e.reason) || String(e.reason)));
+        });
+        setTimeout(function () {
+          var container = document.getElementById("battleContainer");
+          if (container && container.children.length === 0 && el && !el.textContent) {
+            show("重放组件未加载。请通过本地服务器打开本页（例如在项目目录运行: npx serve . 或 npm run dev）");
+          }
+        }, 2500);
+      })();
+    </script>
+    <script type="module">
+      import { mountHeader } from "./script/header-vue.js";
+      mountHeader("appHeader");
+
+      import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.11.1/+esm";
+      globalThis.ethers = ethers;
+      import { CONTRACTS, getGameContract, getPlayer, getAbilitiesExtra, getReceiptByHash, parseCombatFromReceipt } from "./script/gameApi.js";
+      import { createBattleReplayUI } from "./script/battle.js";
+      import { t, setLang, getLang, initLang } from "./script/i18n.js";
+
+      const txHashInput = document.getElementById("txHash");
+      const txHashLabel = document.getElementById("txHashLabel");
+      const btnReplay = document.getElementById("btnReplay");
+      const replayError = document.getElementById("replayError");
+      const battleContainer = document.getElementById("battleContainer");
+
+      const battleUI = createBattleReplayUI(battleContainer, { assetBasePath: "./" });
+
+      // --- Header & wallet (same behavior as floor.html, without floor-specific logic) ---
+      const RONIN_CHAIN_ID_HEX = CONTRACTS.chainIdHex;
+      const RONIN_CHAIN_ID_NUM = CONTRACTS.chainId;
+      const roninParams = {
+        chainId: RONIN_CHAIN_ID_HEX,
+        chainName: "Ronin Saigon Testnet",
+        rpcUrls: ["https://saigon-testnet.roninchain.com/rpc"],
+        nativeCurrency: { name: "Ronin", symbol: "RON", decimals: 18 },
+        blockExplorerUrls: ["https://saigon-app.roninchain.com/"]
+      };
+
+      const connectBtn = document.getElementById("connectBtn");
+      const walletDropdown = document.getElementById("walletDropdown");
+      const walletOptionRonin = document.getElementById("walletOptionRonin");
+      const walletOptionMetaMask = document.getElementById("walletOptionMetaMask");
+      const walletNotConnected = document.getElementById("walletNotConnected");
+      const walletConnected = document.getElementById("walletConnected");
+      const walletAddr = document.getElementById("walletAddr");
+      const walletAddrWrap = document.getElementById("walletAddrWrap");
+      const playerTooltip = document.getElementById("playerTooltip");
+      const playerTooltipBag = document.querySelector(".player-tooltip-bag");
+      const disconnectBtn = document.getElementById("disconnectBtn");
+
+      let gameContract = null;
+      let currentAccount = null;
+      let currentProvider = null;
+
+      function getProvider(walletType) {
+        if (walletType === "ronin") {
+          const ronin = window.ronin;
+          return (ronin?.provider && typeof ronin.provider.request === "function")
+            ? ronin.provider
+            : (ronin && typeof ronin.request === "function" ? ronin : null) || window.ethereum;
+        }
+        if (walletType === "metamask") return window.ethereum;
+        return null;
+      }
+
+      function updateHeaderState() {
+        const connected = !!currentAccount;
+        if (walletNotConnected) walletNotConnected.style.display = connected ? "none" : "block";
+        if (walletConnected) {
+          walletConnected.classList.toggle("visible", connected);
+          if (walletAddr && currentAccount) walletAddr.textContent = currentAccount.slice(0, 6) + "…" + currentAccount.slice(-4);
+        }
+        if (connectBtn) connectBtn.textContent = t("connectWallet");
+        if (disconnectBtn) disconnectBtn.textContent = t("disconnect");
+        if (walletDropdown) walletDropdown.classList.remove("open");
+      }
+
+      function refreshLang() {
+        document.documentElement.lang = getLang() === "zh" ? "zh-CN" : "en";
+        document.title = t("replayPageTitle");
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          const key = el.getAttribute("data-i18n");
+          if (key) el.textContent = t(key);
+        });
+        txHashInput.placeholder = t("txHashPlaceholder");
+        document.querySelectorAll(".lang-btn").forEach((btn) => {
+          const lang = btn.getAttribute("data-lang");
+          btn.classList.toggle("active", lang === getLang());
+        });
+        updateHeaderState();
+      }
+
+      document.querySelectorAll(".lang-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const lang = btn.getAttribute("data-lang");
+          if (lang) setLang(lang);
+          refreshLang();
+        });
+      });
+      window.addEventListener("languageChange", () => refreshLang());
+
+      function setError(msg) {
+        replayError.textContent = msg || "";
+        replayError.style.display = msg ? "block" : "none";
+        if (msg) replayError.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function expNeededForLevel(level) {
+        return 5 * (Number(level) + 1);
+      }
+
+      async function loadPlayerTooltip() {
+        if (!gameContract || !currentAccount || !playerTooltip) return;
+        playerTooltip.classList.add("visible");
+        playerTooltip.setAttribute("aria-hidden", "false");
+        const levelEl = document.getElementById("playerTooltipLevel");
+        const hpLabel = document.getElementById("playerTooltipHpLabel");
+        const hpFill = document.getElementById("playerTooltipHpFill");
+        const hpText = document.getElementById("playerTooltipHpText");
+        const expLabel = document.getElementById("playerTooltipExpLabel");
+        const expFill = document.getElementById("playerTooltipExpFill");
+        const expText = document.getElementById("playerTooltipExpText");
+        const attrsEl = document.getElementById("playerTooltipAttrs");
+        try {
+          const [player, extra] = await Promise.all([
+            getPlayer(gameContract, currentAccount),
+            getAbilitiesExtra(gameContract, currentAccount).catch(() => ({ attack: 0, defense: 0, crit: 0, critChance: 0, blockChance: 0, stunChance: 0 }))
+          ]);
+          const level = Number(player?.level ?? 0);
+          const health = Number(player?.health ?? 0);
+          const healthMax = Number(player?.healthMax ?? 100);
+          const exp = Number(player?.experience ?? 0);
+          const needExp = expNeededForLevel(level);
+          if (levelEl) levelEl.textContent = t("playerLevel") + " " + level;
+          if (hpLabel) hpLabel.textContent = t("playerHp");
+          if (hpFill) hpFill.style.width = healthMax ? (health / healthMax * 100) + "%" : "100%";
+          if (hpText) hpText.textContent = health + "/" + healthMax;
+          if (expLabel) expLabel.textContent = t("playerExp");
+          if (expFill) expFill.style.width = needExp ? (exp / needExp * 100) + "%" : "0%";
+          if (expText) expText.textContent = exp + "/" + needExp;
+          const baseAtk = Number(player?.attack ?? 0);
+          const baseDef = Number(player?.defense ?? 0);
+          const attrs = [
+            [t("playerAttack"), baseAtk, extra.attack],
+            [t("playerDefense"), baseDef, extra.defense],
+            [t("playerCrit"), 0, extra.crit],
+            [t("playerCritChance"), 0, extra.critChance],
+            [t("playerBlockChance"), 0, extra.blockChance],
+            [t("playerStunChance"), 0, extra.stunChance]
+          ];
+          if (attrsEl) {
+            attrsEl.innerHTML = attrs.map(([label, base, bonus]) => {
+              const bonusStr = bonus > 0 ? '<span class="attr-bonus">(+' + bonus + ")</span>" : "";
+              return '<div class="attr">' + label + ": " + base + " " + bonusStr + "</div>";
+            }).join("");
+          }
+        } catch (e) {
+          playerTooltip.classList.remove("visible");
+          playerTooltip.setAttribute("aria-hidden", "true");
+        }
+      }
+
+      let playerTooltipHideTimer = null;
+      function hidePlayerTooltip() {
+        if (playerTooltip) {
+          playerTooltip.classList.remove("visible");
+          playerTooltip.setAttribute("aria-hidden", "true");
+        }
+      }
+      function scheduleHidePlayerTooltip() {
+        if (playerTooltipHideTimer) clearTimeout(playerTooltipHideTimer);
+        playerTooltipHideTimer = setTimeout(() => {
+          playerTooltipHideTimer = null;
+          hidePlayerTooltip();
+        }, 220);
+      }
+
+      initLang();
+      refreshLang();
+
+      connectBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        walletDropdown?.classList.toggle("open");
+      });
+      walletOptionRonin?.addEventListener("click", async () => {
+        const p = getProvider("ronin");
+        if (p) connectWith(p); else alert(t("noRonin"));
+      });
+      walletOptionMetaMask?.addEventListener("click", async () => {
+        const p = getProvider("metamask");
+        if (p) connectWith(p); else alert(t("noMetaMask"));
+      });
+      disconnectBtn?.addEventListener("click", () => {
+        if (currentProvider) {
+          try { currentProvider.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); } catch (_) {}
+          currentProvider = null;
+        }
+        currentAccount = null;
+        gameContract = null;
+        updateHeaderState();
+        location.href = "index.html";
+      });
+      document.addEventListener("click", () => walletDropdown?.classList.remove("open"));
+      walletDropdown?.addEventListener("click", (e) => e.stopPropagation());
+
+      async function runReplay(txHash) {
+        const h = (txHash || "").trim();
+        if (!h) {
+          setError(t("replayErrNoInput"));
+          return;
+        }
+        setError("");
+        btnReplay.disabled = true;
+        battleUI.showWaiting(true, t("loading"));
+        try {
+          let provider = null;
+          if (typeof window !== "undefined" && window.ethereum) {
+            const ethers = globalThis.ethers;
+            if (ethers) provider = new ethers.BrowserProvider(window.ethereum);
+          }
+          const receipt = await getReceiptByHash(h, undefined, provider);
+          if (!receipt || !receipt.logs || receipt.logs.length === 0) {
+            setError(t("replayErrNoLogs"));
+            battleUI.showWaiting(false);
+            btnReplay.disabled = false;
+            return;
+          }
+          const combat = parseCombatFromReceipt(null, receipt);
+          if (!combat) {
+            setError(t("replayErrInvalid"));
+            battleUI.showWaiting(false);
+            btnReplay.disabled = false;
+            return;
+          }
+          battleUI.showWaiting(false);
+          await battleUI.replay(combat);
+        } catch (err) {
+          const msg = err?.message || err?.shortMessage || String(err);
+          const isNetwork = /fetch|CORS|network|failed|RPC request/i.test(msg);
+          const hint = isNetwork ? " " + (t("replayErrNetworkHint") || "（若在浏览器中打开，请先连接钱包后重试）") : "";
+          setError(t("replayErrFailed") + ": " + msg + hint);
+          battleUI.showWaiting(false);
+        } finally {
+          btnReplay.disabled = false;
+        }
+      }
+
+      btnReplay.addEventListener("click", () => runReplay(txHashInput?.value));
+
+      async function connectWith(provider) {
+        if (!provider) return;
+        walletDropdown?.classList.remove("open");
+        if (connectBtn) { connectBtn.disabled = true; connectBtn.textContent = t("connecting"); }
+        try {
+          await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: RONIN_CHAIN_ID_HEX }] }).catch(() =>
+            provider.request({ method: "wallet_addEthereumChain", params: [roninParams] })
+          );
+          const accounts = await provider.request({ method: "eth_requestAccounts" });
+          currentAccount = accounts?.[0] || null;
+          currentProvider = provider;
+          if (window.ethers && provider) {
+            const ethersProvider = new window.ethers.BrowserProvider(provider);
+            const signer = await ethersProvider.getSigner();
+            gameContract = await getGameContract(signer);
+          }
+          updateHeaderState();
+        } catch (err) {
+          alert(t("connectFailed") + ": " + (err?.message || err?.shortMessage || String(err)));
+        } finally {
+          if (connectBtn) { connectBtn.disabled = false; connectBtn.textContent = t("connectWallet"); }
+        }
+      }
+
+      function parseChainId(v) {
+        if (v == null) return null;
+        if (typeof v === "number") return v;
+        const s = String(v);
+        return s.startsWith("0x") ? parseInt(s, 16) : parseInt(s, 10);
+      }
+
+      async function tryRestoreConnection() {
+        const providers = [{ name: "ronin", p: getProvider("ronin") }, { name: "metamask", p: getProvider("metamask") }];
+        for (const { p } of providers) {
+          if (!p) continue;
+          try {
+            const [accounts, chainId] = await Promise.all([
+              p.request({ method: "eth_accounts" }),
+              p.request({ method: "eth_chainId" })
+            ]);
+            if (accounts?.length > 0 && parseChainId(chainId) === RONIN_CHAIN_ID_NUM) {
+              currentAccount = accounts[0];
+              currentProvider = p;
+              if (window.ethers && p) {
+                const ethersProvider = new window.ethers.BrowserProvider(p);
+                const signer = await ethersProvider.getSigner();
+                gameContract = await getGameContract(signer);
+              }
+              updateHeaderState();
+              return true;
+            }
+          } catch (e) {}
+        }
+        return false;
+      }
+
+      function getTxHashFromUrl() {
+        const s = (location.search || "").replace(/^\?/, "");
+        const params = new URLSearchParams(s);
+        let tx = params.get("txHash");
+        if (tx != null && tx.trim()) return tx.trim();
+        let raw = (location.hash || "").replace(/^#/, "");
+        if (!raw) return null;
+        try {
+          raw = decodeURIComponent(raw);
+        } catch (_) {}
+        if (raw.startsWith("0x")) return raw;
+        const hashParams = new URLSearchParams(raw);
+        tx = hashParams.get("txHash");
+        if (tx != null && tx.trim()) return tx.trim();
+        return null;
+      }
+
+      const txFromUrl = getTxHashFromUrl();
+      if (txFromUrl) {
+        txHashInput.value = txFromUrl;
+        setError("");
+        battleUI.showWaiting(true, t("loadingReplay"));
+        runReplay(txFromUrl);
+      }
+
+      battleUI.onConfirm(() => setError(""));
+
+      walletAddrWrap?.addEventListener("mouseenter", () => {
+        if (playerTooltipHideTimer) { clearTimeout(playerTooltipHideTimer); playerTooltipHideTimer = null; }
+        if (walletConnected?.classList.contains("visible") && gameContract && currentAccount) loadPlayerTooltip();
+      });
+      walletAddrWrap?.addEventListener("mouseleave", scheduleHidePlayerTooltip);
+      playerTooltip?.addEventListener("mouseenter", () => {
+        if (playerTooltipHideTimer) { clearTimeout(playerTooltipHideTimer); playerTooltipHideTimer = null; }
+      });
+      playerTooltip?.addEventListener("mouseleave", () => { scheduleHidePlayerTooltip(); });
+
+      (async function initHeaderConnection() {
+        let restored = await tryRestoreConnection();
+        if (!restored && !getProvider("ronin") && !getProvider("metamask")) {
+          await new Promise((r) => setTimeout(r, 300));
+          if (getProvider("ronin") || getProvider("metamask")) restored = await tryRestoreConnection();
+        }
+        if (restored) updateHeaderState();
+      })();
+    </script>
+  </body>
+</html>

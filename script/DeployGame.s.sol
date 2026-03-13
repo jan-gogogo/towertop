@@ -29,7 +29,7 @@ contract DeployGame is Script {
 
         vm.startBroadcast(tokenPrivKey);
 
-        GameToken _token = new GameToken("Tower Top Token", "TOP");
+        GameToken _token = new GameToken("Aoka Tower Token", "ATT");
         GameAssets _assets = new GameAssets("");
         token = address(_token);
         assets = address(_assets);

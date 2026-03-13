@@ -2,6 +2,19 @@
 
 Web frontend for the Tower Top GameFI DApp.
 
+## Running locally (required)
+
+The app uses ES modules (`import`). **Do not open `index.html` directly** (file://) or the browser will block loading scripts (CORS). Use a local HTTP server:
+
+```bash
+cd frontend
+npm start
+```
+
+Then open **http://localhost:3000** in your browser.
+
+Without npm: `cd frontend && npx serve . -p 3000`, or `python3 -m http.server 3000` (then open http://localhost:8000).
+
 ## Directory structure
 
 - **assets/** – Static assets (images, sprites, audio)

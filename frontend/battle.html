@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>战斗 - Tower Top</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="css/battle.css" />
+    <link rel="stylesheet" href="css/common.css" />
+    <link rel="stylesheet" href="css/floor.css" />
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --text-main: #e5e7eb;
+        --text-muted: #9ca3af;
+        --accent: #38bdf8;
+      }
+      body { margin: 0; min-height: 100vh; background: #020617; color: var(--text-main); }
+      .battle-page-main {
+        width: 100%;
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      .battle-page-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .battle-page-header a {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .battle-page-header a:hover { text-decoration: underline; }
+      .battle-page-header .battle-title { font-size: 13px; color: var(--text-muted); }
+      #battleContainer { width: 100%; min-height: min(85vh, 800px); }
+    </style>
+  </head>
+  <body class="body-with-fixed-header">
+    <div id="appHeader"></div>
+
+    <main class="battle-page-main">
+      <header class="battle-page-header">
+        <a href="floor.html" id="backToFloor" data-i18n="backToFloor">← 返回楼层</a>
+        <span class="battle-title" id="battleTitle" data-i18n="battle"></span>
+      </header>
+      <div id="battleContainer"></div>
+    </main>
+
+    <script type="module">
+      import { mountHeader } from "./script/header-vue.js";
+      mountHeader("appHeader");
+
+      import { CONTRACTS, getGameContract, getFloor, battle, parseCombatFromReceipt } from "./script/gameApi.js";
+      import { createBattleReplayUI } from "./script/battle.js";
+      import { t, setLang, getLang, initLang } from "./script/i18n.js";
+
+      const RONIN_CHAIN_ID_HEX = CONTRACTS.chainIdHex;
+      const RONIN_CHAIN_ID_NUM = CONTRACTS.chainId;
+      const roninParams = {
+        chainId: RONIN_CHAIN_ID_HEX,
+        chainName: "Ronin Saigon Testnet",
+        rpcUrls: ["https://saigon-testnet.roninchain.com/rpc"],
+        nativeCurrency: { name: "Ronin", symbol: "RON", decimals: 18 },
+        blockExplorerUrls: ["https://saigon-app.roninchain.com/"]
+      };
+
+      const BATTLE_HISTORY_KEY = "tower-battle-history";
+      const BATTLE_HISTORY_MAX = 50;
+
+      function getProvider(walletType) {
+        if (walletType === "ronin") {
+          const ronin = window.ronin;
+          return (ronin?.provider && typeof ronin.provider.request === "function")
+            ? ronin.provider
+            : (ronin && typeof ronin.request === "function" ? ronin : null) || window.ethereum;
+        }
+        if (walletType === "metamask") return window.ethereum;
+        return null;
+      }
+
+      function parseChainId(v) {
+        if (v == null) return null;
+        if (typeof v === "number") return v;
+        const s = String(v);
+        return s.startsWith("0x") ? parseInt(s, 16) : parseInt(s, 10);
+      }
+
+      function saveBattleTx(floorIndex, slot, txHash) {
+        try {
+          const raw = localStorage.getItem(BATTLE_HISTORY_KEY);
+          const list = raw ? JSON.parse(raw) : [];
+          list.push({ floor: floorIndex, slot, txHash: String(txHash) });
+          localStorage.setItem(BATTLE_HISTORY_KEY, JSON.stringify(list.slice(-BATTLE_HISTORY_MAX)));
+        } catch (e) {}
+      }
+
+      const params = new URLSearchParams(location.search);
+      const floorIndex = parseInt(params.get("floor"), 10);
+      const slot = parseInt(params.get("slot"), 10);
+
+      const battleContainer = document.getElementById("battleContainer");
+      const battleUI = createBattleReplayUI(battleContainer, { assetBasePath: "./" });
+
+      const connectBtn = document.getElementById("connectBtn");
+      const walletDropdown = document.getElementById("walletDropdown");
+      const walletOptionRonin = document.getElementById("walletOptionRonin");
+      const walletOptionMetaMask = document.getElementById("walletOptionMetaMask");
+      const walletNotConnected = document.getElementById("walletNotConnected");
+      const walletConnected = document.getElementById("walletConnected");
+      const walletAddr = document.getElementById("walletAddr");
+      const disconnectBtn = document.getElementById("disconnectBtn");
+
+      let gameContract = null;
+      let currentAccount = null;
+      let currentProvider = null;
+
+      function updateHeaderState() {
+        const connected = !!currentAccount;
+        if (walletNotConnected) walletNotConnected.style.display = connected ? "none" : "block";
+        if (walletConnected) {
+          walletConnected.classList.toggle("visible", connected);
+          if (walletAddr && currentAccount) walletAddr.textContent = currentAccount.slice(0, 6) + "…" + currentAccount.slice(-4);
+        }
+        if (connectBtn) connectBtn.textContent = t("connectWallet");
+        if (disconnectBtn) disconnectBtn.textContent = t("disconnect");
+        if (walletDropdown) walletDropdown.classList.remove("open");
+      }
+
+      async function tryRestoreConnection() {
+        const providers = [{ p: getProvider("ronin") }, { p: getProvider("metamask") }];
+        for (const { p } of providers) {
+          if (!p) continue;
+          try {
+            const [accounts, chainId] = await Promise.all([
+              p.request({ method: "eth_accounts" }),
+              p.request({ method: "eth_chainId" })
+            ]);
+            if (accounts?.length > 0 && parseChainId(chainId) === RONIN_CHAIN_ID_NUM) {
+              currentAccount = accounts[0];
+              currentProvider = p;
+              if (window.ethers && p) {
+                const ethersProvider = new window.ethers.BrowserProvider(p);
+                const signer = await ethersProvider.getSigner();
+                gameContract = await getGameContract(signer);
+              }
+              return true;
+            }
+          } catch (e) {}
+        }
+        return false;
+      }
+
+      initLang();
+      function refreshLang() {
+        document.documentElement.lang = getLang() === "zh" ? "zh-CN" : "en";
+        document.title = t("battlePageTitle");
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          const key = el.getAttribute("data-i18n");
+          if (key) el.textContent = t(key);
+        });
+        document.querySelectorAll(".lang-btn").forEach((btn) => {
+          const lang = btn.getAttribute("data-lang");
+          btn.classList.toggle("active", lang === getLang());
+        });
+        updateHeaderState();
+      }
+      refreshLang();
+
+      connectBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        walletDropdown?.classList.toggle("open");
+      });
+      walletOptionRonin?.addEventListener("click", async () => {
+        const p = getProvider("ronin");
+        if (p) connectWith(p); else alert(t("noRonin"));
+      });
+      walletOptionMetaMask?.addEventListener("click", async () => {
+        const p = getProvider("metamask");
+        if (p) connectWith(p); else alert(t("noMetaMask"));
+      });
+      disconnectBtn?.addEventListener("click", () => {
+        if (currentProvider) {
+          try { currentProvider.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); } catch (_) {}
+          currentProvider = null;
+        }
+        currentAccount = null;
+        gameContract = null;
+        updateHeaderState();
+        location.href = "floor.html";
+      });
+      document.addEventListener("click", () => walletDropdown?.classList.remove("open"));
+      walletDropdown?.addEventListener("click", (e) => e.stopPropagation());
+
+      async function connectWith(provider) {
+        if (!provider) return;
+        walletDropdown?.classList.remove("open");
+        if (connectBtn) { connectBtn.disabled = true; connectBtn.textContent = t("connecting"); }
+        try {
+          await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: RONIN_CHAIN_ID_HEX }] }).catch(() =>
+            provider.request({ method: "wallet_addEthereumChain", params: [roninParams] })
+          );
+          const accounts = await provider.request({ method: "eth_requestAccounts" });
+          currentAccount = accounts?.[0] || null;
+          currentProvider = provider;
+          if (window.ethers && provider) {
+            const ethersProvider = new window.ethers.BrowserProvider(provider);
+            const signer = await ethersProvider.getSigner();
+            gameContract = await getGameContract(signer);
+          }
+          updateHeaderState();
+        } catch (err) {
+          alert(t("connectFailed") + ": " + (err?.message || err?.shortMessage || String(err)));
+        } finally {
+          if (connectBtn) { connectBtn.disabled = false; connectBtn.textContent = t("connectWallet"); }
+        }
+      }
+      document.querySelectorAll(".lang-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const lang = btn.getAttribute("data-lang");
+          if (lang) setLang(lang);
+          refreshLang();
+        });
+      });
+      window.addEventListener("languageChange", () => refreshLang());
+
+      (async function run() {
+        if (isNaN(floorIndex) || isNaN(slot) || slot < 0) {
+          // location.replace("floor.html");
+          return;
+        }
+
+        let restored = false;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 350));
+          restored = await tryRestoreConnection();
+          if (restored && gameContract && currentAccount) break;
+        }
+        if (!restored || !gameContract || !currentAccount) {
+          location.replace("floor.html");
+          return;
+        }
+        updateHeaderState();
+
+        const floor = await getFloor(gameContract, currentAccount);
+        const enemies = floor?.enemies ?? [];
+        const aoka = enemies[slot];
+        if (!aoka || Number(aoka.health) === 0) {
+          location.replace("floor.html");
+          return;
+        }
+
+        battleUI.showWaiting(true, t("confirmingTx"));
+        let receipt;
+        try {
+          const tx = await battle(gameContract, slot);
+          receipt = await tx.wait();
+        } catch (err) {
+          battleUI.showWaiting(false);
+          setTimeout(() => location.replace("floor.html"), 1500);
+          return;
+        }
+        saveBattleTx(floorIndex, slot, receipt.hash);
+        battleUI.showWaiting(false);
+        const combat = parseCombatFromReceipt(gameContract, receipt);
+        if (!combat) {
+          location.replace("floor.html");
+          return;
+        }
+        await battleUI.replay(combat);
+      })();
+
+      battleUI.onConfirm(() => {
+        location.href = "floor.html";
+      });
+    </script>
+  </body>
+</html>

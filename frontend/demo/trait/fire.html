@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>Loading 动画 - 像素风</title>
+<style>
+.fire {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.fire-particle {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: #ff5522;
+    border-radius: 2px;
+    filter: drop-shadow(0 0 6px #ff5522);
+}
+</style>
+</head>
+<body style="background-color: rgba(28, 38, 58, 0.88);"> 
+
+
+<div class="monster-box">
+    <img src="../../assets/aoka/aoka_golem.png" width="200">
+    <div class="fire"></div>
+</div>
+
+
+<script>
+const fire = document.querySelector('.fire');
+
+function spawnFire() {
+    const p = document.createElement("div");
+    p.className = "fire-particle";
+
+    const x = Math.random() * 180;
+    const y = 150 + Math.random() * 20;
+
+    p.style.left = x + "px";
+    p.style.top = y + "px";
+
+    p.animate([
+        { transform: "translateY(0)", opacity: 1 },
+        { transform: "translateY(-40px)", opacity: 0 }
+    ], { duration: 700 });
+
+    fire.appendChild(p);
+    setTimeout(() => p.remove(), 700);
+}
+
+setInterval(spawnFire, 90);
+</script>
+
+</body>
+</html>
