@@ -7,6 +7,17 @@ import {IGameToken} from "./interfaces/IGameToken.sol";
 import {IGameAssets} from "./interfaces/IGameAssets.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
+/**
+ * @title GameV1
+ * @author Jan
+ * @notice First implementation of the game logic, intended to be used behind an upgradeable proxy.
+ *         Inherits all game entry points from GameLogic (born, deposit, battle, shop, etc.) and holds no
+ *         storage; state lives in the proxy. The constructor disables initializers on this logic contract.
+ *         initialize() is invoked once on the proxy at deployment to set HeroLogic, InventoryLogic,
+ *         GameToken, and GameAssets dependencies.
+ * @dev Deploy this contract as the implementation; point a proxy (e.g. TransparentUpgradeableProxy) at it
+ *      and call initialize(...) on the proxy with the dependency addresses.
+ */
 contract GameV1 is GameLogic, Initializable {
     /**
      * @notice constructor function
