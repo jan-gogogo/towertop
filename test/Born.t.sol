@@ -86,10 +86,7 @@ contract BornTest is RouterTestBase {
 
         uint256 count = gameLogic.getEnemies(user).length;
         for (uint256 i = 0; i < count; i++) {
-            assertFalse(
-                gameLogic.getEnemies(user)[i].isBoss,
-                "floor 0 is not a boss floor, no enemy should be boss"
-            );
+            assertFalse(gameLogic.getEnemies(user)[i].isBoss, "floor 0 is not a boss floor, no enemy should be boss");
         }
     }
 

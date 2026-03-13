@@ -83,11 +83,7 @@ contract DepositWithdrawTest is RouterTestBase {
 
         assertEq(gameToken.balanceOf(user), expectedToUser, "user receives 95%");
         assertEq(gameAssets.balanceOf(user, Property.COIN_ID), coinBalance - withdrawCoin, "Coin deducted");
-        assertEq(
-            gameToken.balanceOf(address(gameLogic)),
-            depositAmount - expectedToken,
-            "Game proxy balance decreased"
-        );
+        assertEq(gameToken.balanceOf(address(gameLogic)), depositAmount - expectedToken, "Game proxy balance decreased");
         assertEq(gameToken.totalSupply(), depositAmount - expectedBurn, "5% burned");
     }
 
