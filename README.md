@@ -3,6 +3,18 @@
 Aoka Tower is an Ethereum‑based tower‑climbing GameFI project.  
 The player starts on floor 1 and climbs up to floor 100 by defeating monsters, challenging BOSSes, and acquiring or upgrading equipment.
 
+**status:** In Development, deployed on Ronin Testnet(Saigon)
+
+**GameProxy:** [0xea8cf0099674B6c8DF6EefB767b0cA3C0227BF81](https://saigon-explorer.roninchain.com/address/0xea8cf0099674B6c8DF6EefB767b0cA3C0227BF81)
+
+**HeroProxy:** [0x0841105ecbcb7B58682AF70d3CDDCf87010ad423](https://saigon-explorer.roninchain.com/address/0x0841105ecbcb7B58682AF70d3CDDCf87010ad423)
+
+**InventoryProxy:** [0x4422Ef25B46d897722D588F64a0978922fb56235](https://saigon-explorer.roninchain.com/address/0x4422Ef25B46d897722D588F64a0978922fb56235)
+
+**ERC20:** [0xE9c53Da34e0FE05817fc2506402b18c79B2a5250](https://saigon-explorer.roninchain.com/address/0xE9c53Da34e0FE05817fc2506402b18c79B2a5250)
+
+**ERC1155:** [0x6d798A5D4B01a3bB4E73C07F62e2A041CdF5004F](https://saigon-explorer.roninchain.com/address/0x6d798A5D4B01a3bB4E73C07F62e2A041CdF5004F)
+
 ### Core Gameplay
 
 - **Tower Progression**
