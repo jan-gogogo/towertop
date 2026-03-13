@@ -6,12 +6,15 @@ The player starts on floor 1 and climbs up to floor 100 by defeating monsters, c
 **status:** In Development, deployed on Ronin Testnet(Saigon)
 
 **GameProxy:** [0xea8cf0099674B6c8DF6EefB767b0cA3C0227BF81](https://saigon-explorer.roninchain.com/address/0xea8cf0099674B6c8DF6EefB767b0cA3C0227BF81)
+
 **GameV1:** [0x0A92Fc7847FE4471cB4b388d55D7e2Cbe5c367b8](https://saigon-explorer.roninchain.com/address/0x0A92Fc7847FE4471cB4b388d55D7e2Cbe5c367b8)
 
 **HeroProxy:** [0x0841105ecbcb7B58682AF70d3CDDCf87010ad423](https://saigon-explorer.roninchain.com/address/0x0841105ecbcb7B58682AF70d3CDDCf87010ad423)
+
 **HeroV1:** [0x2219537CDcdc442603e2800E489263D5C73Dc6e5](https://saigon-explorer.roninchain.com/address/0x2219537CDcdc442603e2800E489263D5C73Dc6e5)
 
 **InventoryProxy:** [0x4422Ef25B46d897722D588F64a0978922fb56235](https://saigon-explorer.roninchain.com/address/0x4422Ef25B46d897722D588F64a0978922fb56235)
+
 **InventoryV1:** [0xB784Fc267c71D6b03199bc5F77136Be451c4Bd11](https://saigon-explorer.roninchain.com/address/0xB784Fc267c71D6b03199bc5F77136Be451c4Bd11)
 
 **ERC20:** [0xE9c53Da34e0FE05817fc2506402b18c79B2a5250](https://saigon-explorer.roninchain.com/address/0xE9c53Da34e0FE05817fc2506402b18c79B2a5250)
