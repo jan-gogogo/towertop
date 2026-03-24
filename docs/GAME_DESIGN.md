@@ -12,6 +12,7 @@
 - **升级能力**：游戏代理由 **proxy admin** 管理，admin 调用代理上的 `upgradeToAndCall(newImplementation, data)` 即可更换 Game 逻辑（GameV1 → GameV2 等）；Hero/Inventory 代理同样可由各自 admin 升级其逻辑合约（HeroV1、InventoryV1）。
 - **权限与安全**：游戏逻辑合约（GameV1）仅负责 `initialize(heroLogic, inventoryLogic, gameToken, gameAssets)`，无自有存储；HeroV1/InventoryV1 通过 `setPermit` 将唯一调用方设为游戏代理，避免被任意地址直接调用。
 - **资产与代币**：ERC20 游戏代币与 ERC1155 资产合约采用「仅游戏代理可操作」设计（`setProxy(gameProxy)` 一次性绑定），由游戏合约统一 mint/burn，保证经济与掉落逻辑仅在受控入口执行。
+- **随机数**：战斗、楼层生成、商店、锻造等核心随机逻辑使用 `block.prevrandao` 混合种子（`Randao.getSeed()`）；战斗奖励掉落使用Oracle **Chainlink VRF V2 Plus** 提供密码学安全的可验证随机数，详细说明见 **3.1 Chainlink VRF 随机数系统**。
 
 ------
 **楼层与玩法**
@@ -43,7 +44,8 @@
 | 楼层与环境   | src/libraries/Environment.sol         | `struct Floor`、`Shop` 等楼层/环境生成逻辑  |
 | 战斗计算     | src/libraries/Battle.sol              | 战斗回合流程、伤害计算、奖励生成等         |
 | 属性枚举     | src/libraries/Attribute.sol           | 稀有度 `enum Rarity` 等基础枚举           |
-| 随机数封装   | src/random/Randao.sol, src/libraries/Seed.sol | 基于 `block.prevrandao` 的随机种子与派生，后续可接入 Oracle（如Chainlink或Pyth） |
+| 随机数封装   | src/libraries/Randao.sol, src/libraries/Seed.sol | 基于 `block.prevrandao` 的随机种子，用于战斗、楼层生成、商店、锻造等常规随机需求 |
+| Chainlink VRF | src/GameLogic.sol, src/GameV1.sol | Chainlink VRF V2 Plus：战斗胜利后请求随机数用于奖励掉落，`fulfillRandomWords` 回调直接发放资产，无需后端服务 |
 | 资产合约     | src/GameAssets.sol                    | ERC1155 资产合约（物品/装备/金币），仅游戏代理可 mint/burn |
 | 代币合约     | src/GameToken.sol                     | ERC20 游戏代币（用于兑换游戏内 Coin），仅游戏代理可 mint/burn |
 
@@ -137,7 +139,46 @@
 
 ## 三、战斗系统
 
-### 3.1 战斗流程（与 2.3 玩家属性、2.6 属性相克 对应）
+### 3.1 Chainlink VRF 随机数系统
+
+**背景**：游戏中的战斗结果由链上 `block.prevrandao` 决定（可验证公平）；但战斗奖励（物品掉落、装备掉落）的随机性需要更强的保证，以防止验证者/节点预知结果。因此奖励掉落使用 **Chainlink VRF V2 Plus** 提供可验证的随机数。
+
+**VRF 调用流程**：
+
+1. **请求阶段**：`battle()` 中玩家获胜后，调用 `_requestRandomWordsForReward(addr, floorIndex)` 向 VRF Coordinator 发起请求。
+2. **请求参数**：
+   - `keyHash`：VRF 订阅对应的 key hash
+   - `subId`：VRF 订阅 ID（由订阅管理员资助）
+   - `requestConfirmations`：5（等待 5 个区块确认）
+   - `callbackGasLimit`：250,000
+   - `numWords`：1（每次请求 1 个随机数）
+   - `extraArgs`：使用 `ExtraArgsV1({nativePayment: false})`（使用 LINK 而非原生代币支付）
+3. **状态存储**：请求 ID 与 `RewardWinner({player, floorIndex})` 存入 `mapping(uint256 requestId => RewardWinner) private _rewards`。
+4. **回调阶段**：VRF Coordinator 在约 2–3 个区块后回调 `fulfillRandomWords(requestId, randomWords)`。
+5. **奖励发放**：`randomWords[0]` 作为种子传给 `InventoryLogic.rewardWinner(player, bytes32(random), floorIndex)`，计算掉落并通过 `_gameAssets.mintBatch()` 发放。
+6. **防重入**：回调后删除 `_rewards[requestId]`，并将 `floorIndex` 设为 `type(uint256).max` 标记已处理。
+
+**合约继承关系**：
+- `GameLogic` 继承 `VRFConsumerBaseV2Upgradeable` 并实现 `fulfillRandomWords`。
+- `GameV1.initialize()` 接收 `_vrfCoordinator_`、`_keyHash_`、`_subscription_` 三个参数并初始化 VRF consumer。
+
+**安全性**：
+- VRF 提供密码学安全的随机数，无法被区块生产者预测或操纵。
+- 回调仅发行资产，不修改玩家核心状态（楼层、血量、经验），因此即使 VRF 回调延迟也不影响游戏进程。
+
+**部署配置**（`.env`）：
+```
+VRF_COORDINATOR=<VRF Coordinator V2 Plus 地址>
+VRF_KEY_HASH=<Key Hash>
+VRF_SUBSCRIPTION=<订阅 ID>
+```
+测试环境使用 `VRFCoordinatorV2_5Mock`（`@chainlink/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol`），可 `fulfillRandomWordsWithOverride` 立即返回随机数。
+
+**gas 成本**：VRF 回调约消耗 250,000 gas（含 `mintBatch` 写操作），由 VRF 订阅池支付；游戏中不向玩家额外收取 VRF 费用。
+
+### 3.2 战斗流程（与 2.3 玩家属性、2.6 属性相克 对应）
+
+战斗过程中所有随机数均使用链上 `block.prevrandao`（来自信标链的 RANDAO）混合种子生成。
 
 1. 玩家先手。
 2. 若本回合对方被眩晕，则对方跳过行动。
@@ -148,7 +189,7 @@
 7. 对方攻击时：掷随机数，若小于玩家 blockChance，则伤害减免为 `damage - (damage / 4 - rarity)`（rarity 0–3 对应 C–S），且保证 `damageTaken >= 0`（可用 `max(0, ...)`）。
 8. 根据最终伤害扣减血量。
 
-### 3.2 伤害公式（与 2.6 属性相克 一致）
+### 3.3 伤害公式（与 2.6 属性相克 一致）
 
 **基础伤害（双方通用）**
 

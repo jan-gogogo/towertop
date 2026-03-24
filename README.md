@@ -95,9 +95,19 @@ The game uses **three proxies** (Game, Hero, Inventory), each with logic/storage
 
 ### Randomness
 
-| Contract | Path                | Description |
-|----------|---------------------|-------------|
-| **Oracle** | `src/random/Oracle.sol` | Wraps `Randao`; currently uses `block.prevrandao` for combat/shop/forge RNG. Can be swapped for an external oracle later. |
+| Contract | Path | Description |
+|----------|------|-------------|
+| **Oracle** | `src/libraries/Randao.sol` | Wraps `block.prevrandao` for on-chain RNG used in combat, floor generation, shop, and forge. |
+| **VRF** | `src/GameLogic.sol` | Chainlink VRF V2 Plus integration: after a player wins a battle, the contract requests random words from VRF to determine loot rewards. The `fulfillRandomWords` callback mints assets directly without a backend. |
+
+**VRF Architecture:**
+
+- `GameV1.initialize()` accepts `_vrfCoordinator_`, `_keyHash_`, and `_subscription_` parameters.
+- `GameLogic` inherits `VRFConsumerBaseV2Upgradeable` and implements `fulfillRandomWords`.
+- On battle victory → `_requestRandomWordsForReward()` sends a VRF request with `numWords=1`, `callbackGasLimit=250000`, `requestConfirmations=5`.
+- VRF coordinator calls back `fulfillRandomWords(requestId, randomWords)` → `InventoryLogic.rewardWinner()` → `_gameAssets.mintBatch()`.
+- A `mapping(uint256 requestId => RewardWinner)` stores pending reward state; `floorIndex == uint256.max` marks a processed request to prevent reentrancy.
+- Test suite uses `VRFCoordinatorV2_5Mock` from `@chainlink`; deployment uses real VRF subscription via `.env` (`VRF_COORDINATOR`, `VRF_KEY_HASH`, `VRF_SUBSCRIPTION`).
 
 ---
 
