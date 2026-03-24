@@ -14,7 +14,6 @@ docs/questions
 
 
 # Dotenv file
-.env
 .yul_compare
 .gas-snapshot
 

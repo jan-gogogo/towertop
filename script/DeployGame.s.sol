@@ -47,7 +47,18 @@ contract DeployGame is Script {
             new TransparentUpgradeableProxy(address(inventoryImpl), owner, inventoryInit);
         inventoryProxy = address(_inventoryProxy);
 
-        bytes memory gameInit = abi.encodeCall(GameV1.initialize, (heroProxy, inventoryProxy, token, assets));
+        bytes memory gameInit = abi.encodeCall(
+            GameV1.initialize,
+            (
+                heroProxy,
+                inventoryProxy,
+                token,
+                assets,
+                vm.envAddress("VRF_COORDINATOR"),
+                vm.envBytes32("VRF_KEY_HASH"),
+                vm.envUint("VRF_SUBSCRIPTION")
+            )
+        );
         TransparentUpgradeableProxy _gameProxy = new TransparentUpgradeableProxy(address(gameImpl), owner, gameInit);
         gameProxy = address(_gameProxy);
 

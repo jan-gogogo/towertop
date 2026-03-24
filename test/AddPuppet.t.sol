@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {RouterTestBase} from "./RouterTestBase.sol";
 import {IInventoryLogic} from "../src/interfaces/IInventoryLogic.sol";
 import {Rarity} from "../src/libraries/Attribute.sol";
-import {Property, Puppet} from "../src/libraries/Property.sol";
+import {Puppet} from "../src/libraries/Property.sol";
 
 /**
  * Unit tests for InventoryLogic.addPuppet.

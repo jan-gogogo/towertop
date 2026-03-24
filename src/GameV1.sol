@@ -5,7 +5,7 @@ import {IHeroLogic} from "./interfaces/IHeroLogic.sol";
 import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
 import {IGameToken} from "./interfaces/IGameToken.sol";
 import {IGameAssets} from "./interfaces/IGameAssets.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {IVRFCoordinatorV2Plus} from "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
 
 /**
  * @title GameV1
@@ -18,7 +18,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * @dev Deploy this contract as the implementation; point a proxy (e.g. TransparentUpgradeableProxy) at it
  *      and call initialize(...) on the proxy with the dependency addresses.
  */
-contract GameV1 is GameLogic, Initializable {
+contract GameV1 is GameLogic {
     /**
      * @notice constructor function
      *  @dev Disable initializers on the logic contract so initialize() never runs in its context.
@@ -33,17 +33,31 @@ contract GameV1 is GameLogic, Initializable {
 
     /**
      * @notice initialization function (called during proxy deployment)
-     *  @dev This function is disabled on the logic contract; the proxy runs it in its own context when deployed.
-     *       Because it runs in the proxy's context, msg.sender is the deployer,
-     *       not the proxy—so we pass _owner_ explicitly instead of relying on auth.
+     * @dev This function is disabled on the logic contract; the proxy runs it in its own context when deployed.
+     *      Because it runs in the proxy's context, msg.sender is the deployer, not the proxy—so we pass _owner_
+     *      explicitly instead of relying on auth.
+     *      Additionally initializes Chainlink VRF consumer for random number generation:
+     *      - _vrfCoordinator_: Chainlink VRF Coordinator V2 Plus address
+     *      - _keyHash_: Key hash for VRF subscription
+     *      - _subscription_: Subscription ID for VRF funding
      */
-    function initialize(address _heroLogic_, address _inventoryLogic_, address _gameToken_, address _gameAssets_)
-        external
-        initializer
-    {
+    function initialize(
+        address _heroLogic_,
+        address _inventoryLogic_,
+        address _gameToken_,
+        address _gameAssets_,
+        address _vrfCoordinator_,
+        bytes32 _keyHash_,
+        uint256 _subscription_
+    ) external initializer {
         _heroLogic = IHeroLogic(_heroLogic_);
         _inventoryLogic = IInventoryLogic(_inventoryLogic_);
         _gameToken = IGameToken(_gameToken_);
         _gameAssets = IGameAssets(_gameAssets_);
+
+        __VRFConsumerBaseV2_init(_vrfCoordinator_);
+        _vrfCoordinator = IVRFCoordinatorV2Plus(_vrfCoordinator_);
+        _keyHash = _keyHash_;
+        _subscription = _subscription_;
     }
 }

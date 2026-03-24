@@ -32,6 +32,11 @@ struct Equipment {
     uint256 specialItem;
 }
 
+struct RewardWinner {
+    address player;
+    uint256 floorIndex;
+}
+
 library Character {
     function isLevelUp(uint8 curLevel, uint32 gainedExp, uint32 curExp) internal pure returns (bool, uint32) {
         unchecked {

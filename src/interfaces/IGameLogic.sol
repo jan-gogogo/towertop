@@ -7,6 +7,8 @@ import {Aoka} from "../libraries/Enemy.sol";
 interface IGameLogic {
     event Born(address indexed addr);
     event Combat(address indexed addr, bytes32 seed, Floor floor, Player player, AbilitiesExtra ae, Aoka aoka);
+    event RequestRandom(address indexed addr, uint256 requestId, uint256 floorIndex);
+    event FulfillRandom(address indexed addr, uint256 requestId, uint256 random);
 
     error PlayerAlreadyExists();
     error AmountAtLeast1e18();

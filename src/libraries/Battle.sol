@@ -85,17 +85,13 @@ library Battle {
             );
 
             if (rv.stunChance > 0) {
-                unchecked {
-                    if (uint8(roll3[i]) < (rv.stunChance * 256) / 100) stunned = true;
-                }
+                if (uint8(roll3[i]) < (rv.stunChance * 256) / 100) stunned = true;
             }
 
-            unchecked {
-                if (parity == 0) {
-                    aHealth = damage < aHealth ? aHealth - damage : 0;
-                } else {
-                    pHealth = damage < pHealth ? pHealth - damage : 0;
-                }
+            if (parity == 0) {
+                aHealth = damage < aHealth ? aHealth - damage : 0;
+            } else {
+                pHealth = damage < pHealth ? pHealth - damage : 0;
             }
 
             if (pHealth == 0 || aHealth == 0) break;
@@ -105,20 +101,22 @@ library Battle {
         aHealthFinal = aHealth;
     }
 
-    function rewardItemsAppendEquipmentAndCoins(bytes32 seed, uint256 floorIndex, uint256 eqiupmentId)
-        internal
-        pure
-        returns (uint256[] memory assetIds, uint256[] memory values)
-    {
+    function rewardCoins(uint256 floorIndex) internal pure returns (uint256 coinCount) {
+        unchecked {
+            coinCount = floorIndex.isBossFloor() ? (floorIndex + 1) + 5 : floorIndex / 5 + 1;
+            coinCount *= 1 ether;
+        }
+    }
+
+    function rewardItems(bytes32 seed, uint256 floorIndex) internal pure returns (uint256[] memory assetIds) {
         unchecked {
             bool isBoss = floorIndex.isBossFloor();
             // 1 or 2
             uint256 count = (uint8(seed[4]) % 2) + 1;
             // around 5% or 0
             uint8 s = (isBoss && floorIndex > 69) ? 13 : 0;
-            // items + equipment and coin
-            assetIds = new uint256[](count + 2);
-            values = new uint256[](count + 2);
+
+            assetIds = new uint256[](count);
 
             for (uint256 i = 0; i < count; i++) {
                 // 204 is around 80% of 256
@@ -136,21 +134,7 @@ library Battle {
                 }
                 if (isPotion) id += 100;
                 assetIds[i] = id;
-                values[i] = 1;
             }
-            // append equipmentId
-            assetIds[count] = eqiupmentId;
-            values[count] = 1;
-
-            // append coin
-            uint256 coinCount = 0;
-            if (isBoss) {
-                coinCount = (floorIndex + 1) + 5;
-            } else {
-                coinCount = floorIndex / 5 + 1;
-            }
-            assetIds[count + 1] = Property.COIN_ID;
-            values[count + 1] = coinCount * 1 ether;
         }
     }
 
@@ -199,9 +183,7 @@ library Battle {
         uint256 damage = 1;
 
         if (attack > defense) {
-            unchecked {
-                damage = attack - defense;
-            }
+            damage = attack - defense;
         }
 
         if (isElementalAdvantage && damage > 1) {
@@ -213,9 +195,7 @@ library Battle {
         }
 
         if ((damage > 1 && roll2 < (blockChance * 256) / 100)) {
-            unchecked {
-                damage /= 2;
-            }
+            damage /= 2;
         }
         return damage;
     }
