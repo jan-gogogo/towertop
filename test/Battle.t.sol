@@ -7,6 +7,7 @@ import {Property} from "../src/libraries/Property.sol";
 import {Player} from "../src/libraries/Character.sol";
 import {Floor} from "../src/libraries/Environment.sol";
 import {Character} from "../src/libraries/Character.sol";
+import {console} from "forge-std/console.sol";
 
 /**
  * Unit tests for Game.battle(uint256 enemySlot).
@@ -22,14 +23,25 @@ contract BattleTest is RouterTestBase {
         vm.stopPrank();
     }
 
+    uint256 internal _requestIdCounter;
+
+    /// @notice Helper: battle + fulfill assuming caller is already inside prank block
+    function _battleAndFulfillInner(uint256 enemySlot) internal {
+        gameLogic.battle(enemySlot);
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
+    }
+
+    /// @notice Clear current floor - caller must be inside prank block
     function _clearCurrentFloorWithSeed(uint256 baseSeed) internal {
         Floor memory floor = gameLogic.getFloor(user);
         for (uint256 i = 0; i < floor.enemies.length; i++) {
             vm.prevrandao(baseSeed + i);
-            gameLogic.battle(i);
+            _battleAndFulfillInner(i);
         }
     }
 
+    /// @notice Advance to target floor - caller must be inside prank block
     function _advanceToFloor(uint8 targetIndex, uint256 seedBase) internal {
         while (gameLogic.getFloor(user).index < targetIndex) {
             uint8 idx = gameLogic.getFloor(user).index;
@@ -38,8 +50,13 @@ contract BattleTest is RouterTestBase {
         }
     }
 
+    function test_abiencode() public pure {
+        console.logBytes(abi.encodeWithSelector(IGameLogic.battle.selector));
+        console.logBytes(abi.encodeWithSignature("battle(uint256)"));
+        console.log(type(uint256).max);
+    }
+
     function test_battle_afterBorn_playerCanFight() public {
-        // user already born in setUp
         Player memory pBefore = heroLogic.getPlayer(user);
         Floor memory floor = heroLogic.getFloor(user);
         assertGt(floor.enemies.length, 0, "floor has enemies");
@@ -47,6 +64,9 @@ contract BattleTest is RouterTestBase {
 
         vm.prank(user);
         gameLogic.battle(0);
+
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
 
         Player memory pAfter = heroLogic.getPlayer(user);
         Floor memory floorAfter = heroLogic.getFloor(user);
@@ -65,6 +85,9 @@ contract BattleTest is RouterTestBase {
 
         vm.prank(user);
         gameLogic.battle(0);
+
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
 
         Player memory p = heroLogic.getPlayer(user);
         Floor memory floor = heroLogic.getFloor(user);
@@ -95,6 +118,9 @@ contract BattleTest is RouterTestBase {
 
         gameLogic.battle(0);
 
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
+
         Floor memory floorAfter = gameLogic.getFloor(user);
         assertEq(floorAfter.enemies[0].health, 0, "enemy at slot 0 should be defeated");
         vm.stopPrank();
@@ -104,6 +130,10 @@ contract BattleTest is RouterTestBase {
         vm.startPrank(user);
         Player memory playerBefore = gameLogic.getPlayer(user);
         gameLogic.battle(0);
+
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
+
         Player memory playerAfter = gameLogic.getPlayer(user);
 
         Floor memory floor = gameLogic.getFloor(user);
@@ -122,6 +152,10 @@ contract BattleTest is RouterTestBase {
         assertTrue(count >= 1 && count <= 4, "floor 0 has 1-4 enemies");
 
         gameLogic.battle(count - 1);
+
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
+
         floor = gameLogic.getFloor(user);
         assertEq(floor.enemies[count - 1].health, 0, "last enemy defeated");
         vm.stopPrank();
@@ -133,6 +167,10 @@ contract BattleTest is RouterTestBase {
         vm.prevrandao(uint256(0));
         Player memory playerBefore = gameLogic.getPlayer(user);
         gameLogic.battle(0);
+
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
+
         Player memory playerAfter = gameLogic.getPlayer(user);
         assertLt(playerAfter.health, playerBefore.health, "player should take damage when enemy hits");
         vm.stopPrank();
@@ -149,6 +187,9 @@ contract BattleTest is RouterTestBase {
 
         vm.prevrandao(0xBEEF);
         gameLogic.battle(0);
+
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
 
         Floor memory floor = gameLogic.getFloor(user);
         assertEq(floor.enemies[0].health, 0, "BOSS defeated");
@@ -168,7 +209,7 @@ contract BattleTest is RouterTestBase {
         if (gameLogic.getPlayer(user).level < 2) {
             gameLogic.nextFloor();
             vm.prevrandao(0x1234);
-            gameLogic.battle(0);
+            _battleAndFulfillInner(0);
         }
         Player memory p = gameLogic.getPlayer(user);
         assertGe(p.level, 1, "level at least 1");
@@ -188,8 +229,10 @@ contract BattleTest is RouterTestBase {
         uint256 coinBefore = gameAssets.balanceOf(user, Property.COIN_ID);
         Player memory playerBefore = gameLogic.getPlayer(user);
         vm.stopPrank();
+
         vm.prank(address(gameLogic));
         heroLogic.setPlayerHealth(user, 1);
+
         vm.prank(user);
         vm.prevrandao(uint256(1));
         gameLogic.battle(0);
@@ -221,6 +264,10 @@ contract BattleTest is RouterTestBase {
     function test_battle_revertWhenEnemyAlreadyDead() public {
         vm.startPrank(user);
         gameLogic.battle(0);
+
+        _requestIdCounter++;
+        vrfCoordinatorMock.fulfillRandomWordsWithOverride(_requestIdCounter, address(gameLogic), new uint256[](1));
+
         vm.expectRevert(abi.encodeWithSelector(IGameLogic.EnemyNotFound.selector, uint256(0)));
         gameLogic.battle(0);
         vm.stopPrank();

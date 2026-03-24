@@ -72,9 +72,7 @@ abstract contract InventoryLogic is IInventoryLogic {
         uint256 latest = _nextPuppetId;
         if (latest >= PUPPET_ID_CAP) revert CapacityExceeded();
         _puppets[latest] = Puppet({rarity: Rarity(rarity), lastClaimAt: lastClaimAt});
-        unchecked {
-            _nextPuppetId++;
-        }
+        _nextPuppetId++;
         _addToWarehouse(addr, latest);
         return latest;
     }
@@ -174,15 +172,36 @@ abstract contract InventoryLogic is IInventoryLogic {
         if (Battle.equipmentDetermine(uint8(rewardSeed[0]), floorIndex)) {
             equipmentId = _rollEquipmentReward(winner, rewardSeed, floorIndex);
         }
-        (assetIds, values) = Battle.rewardItemsAppendEquipmentAndCoins(rewardSeed, floorIndex, equipmentId);
+        uint256[] memory itemIds = Battle.rewardItems(rewardSeed, floorIndex);
+        uint256 coinCount = Battle.rewardCoins(floorIndex);
 
-        if (assetIds.length > 2) {
-            uint256 itemCount = assetIds.length - 2;
-            uint256[] memory itemIds = new uint256[](itemCount);
-            for (uint256 i = 0; i < itemCount; i++) {
-                itemIds[i] = assetIds[i];
-            }
+        uint256 itemLen = itemIds.length;
+        if (itemLen > 0) {
             _addItemBatch(winner, itemIds);
+        }
+
+        uint256 assetCount = itemLen;
+        if (equipmentId > 0) assetCount++;
+        if (coinCount > 0) assetCount++;
+
+        if (assetCount == 0) return (new uint256[](0), new uint256[](0));
+
+        assetIds = new uint256[](assetCount);
+        values = new uint256[](assetCount);
+
+        for (uint256 i = 0; i < itemLen; i++) {
+            assetIds[i] = itemIds[i];
+            values[i] = 1;
+        }
+        uint256 pos = itemLen;
+        if (equipmentId > 0) {
+            assetIds[pos] = equipmentId;
+            values[pos] = 1;
+            pos++;
+        }
+        if (coinCount > 0) {
+            assetIds[pos] = Property.COIN_ID;
+            values[pos] = coinCount;
         }
     }
 
@@ -236,9 +255,7 @@ abstract contract InventoryLogic is IInventoryLogic {
         for (uint256 i = 0; i < len; i++) {
             if (mb[i] == EMPTY_SLOT) {
                 mb[i] = itemIds[op];
-                unchecked {
-                    op++;
-                }
+                op++;
             }
             if (op == itemsLen) return;
         }
@@ -265,9 +282,7 @@ abstract contract InventoryLogic is IInventoryLogic {
         uint256 latest = _nextEquipmentId;
         if (latest >= EQUIPMENT_ID_CAP) revert CapacityExceeded();
         _equipments[latest] = equipment;
-        unchecked {
-            _nextEquipmentId++;
-        }
+        _nextEquipmentId++;
         _addToWarehouse(addr, latest);
         return latest;
     }
