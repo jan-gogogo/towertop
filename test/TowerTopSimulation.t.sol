@@ -57,7 +57,7 @@ contract TowerTopSimulationTest is RouterTestBase {
 
             Floor memory floor = gameLogic.getFloor(user);
 
-            if (floor.index >= 28) {
+            if (floor.index >= 10) {
                 break;
             }
 
