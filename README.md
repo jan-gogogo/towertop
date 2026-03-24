@@ -3,23 +3,23 @@
 Aoka Tower is an Ethereum‑based tower‑climbing GameFI project.  
 The player starts on floor 1 and climbs up to floor 100 by defeating monsters, challenging BOSSes, and acquiring or upgrading equipment.
 
-**status:** In Development, deployed on Ronin Testnet(Saigon)
+**status:** In Development, deployed on Polygon Amoy Testnet
 
-**GameProxy:** [0xea8cf0099674B6c8DF6EefB767b0cA3C0227BF81](https://saigon-explorer.roninchain.com/address/0xea8cf0099674B6c8DF6EefB767b0cA3C0227BF81)
+**GameProxy:** [0x63bbEc3528D2dcb604ADE938782D16C63f0174A7](https://amoy.polygonscan.com/address/0x63bbEc3528D2dcb604ADE938782D16C63f0174A7)
 
-**GameV1:** [0x0A92Fc7847FE4471cB4b388d55D7e2Cbe5c367b8](https://saigon-explorer.roninchain.com/address/0x0A92Fc7847FE4471cB4b388d55D7e2Cbe5c367b8)
+**GameV1:** [0x8420A0FA02ADbF0f4c1eb663335dd2A981422092](https://amoy.polygonscan.com/address/0x8420A0FA02ADbF0f4c1eb663335dd2A981422092)
 
-**HeroProxy:** [0x0841105ecbcb7B58682AF70d3CDDCf87010ad423](https://saigon-explorer.roninchain.com/address/0x0841105ecbcb7B58682AF70d3CDDCf87010ad423)
+**HeroProxy:** [0xf55174c2fC4159B0d89Ad2BB36cB42C7fECD005b](https://amoy.polygonscan.com/address/0xf55174c2fC4159B0d89Ad2BB36cB42C7fECD005b)
 
-**HeroV1:** [0x2219537CDcdc442603e2800E489263D5C73Dc6e5](https://saigon-explorer.roninchain.com/address/0x2219537CDcdc442603e2800E489263D5C73Dc6e5)
+**HeroV1:** [0x2EA385c2566516d75DD0dcb4D6AfCeCcA5f0E657](https://amoy.polygonscan.com/address/0x2EA385c2566516d75DD0dcb4D6AfCeCcA5f0E657)
 
-**InventoryProxy:** [0x4422Ef25B46d897722D588F64a0978922fb56235](https://saigon-explorer.roninchain.com/address/0x4422Ef25B46d897722D588F64a0978922fb56235)
+**InventoryProxy:** [0x7F2cE96023B8F66aBf325E656Aa4Fa58E202cbc2](https://amoy.polygonscan.com/address/0x7F2cE96023B8F66aBf325E656Aa4Fa58E202cbc2)
 
-**InventoryV1:** [0xB784Fc267c71D6b03199bc5F77136Be451c4Bd11](https://saigon-explorer.roninchain.com/address/0xB784Fc267c71D6b03199bc5F77136Be451c4Bd11)
+**InventoryV1:** [0xbE11aE82119d976689E927EDad650ab25Fab9474](https://amoy.polygonscan.com/address/0xbE11aE82119d976689E927EDad650ab25Fab9474)
 
-**ERC20:** [0xE9c53Da34e0FE05817fc2506402b18c79B2a5250](https://saigon-explorer.roninchain.com/address/0xE9c53Da34e0FE05817fc2506402b18c79B2a5250)
+**ERC20 (GameToken):** [0x6aF282942487f79a8F5A33fA750C09475707368A](https://amoy.polygonscan.com/address/0x6aF282942487f79a8F5A33fA750C09475707368A)
 
-**ERC1155:** [0x6d798A5D4B01a3bB4E73C07F62e2A041CdF5004F](https://saigon-explorer.roninchain.com/address/0x6d798A5D4B01a3bB4E73C07F62e2A041CdF5004F)
+**ERC1155 (GameAssets):** [0x557A79c517EB114E6A27f9c41DCfAb9A292dD4c0](https://amoy.polygonscan.com/address/0x557A79c517EB114E6A27f9c41DCfAb9A292dD4c0)
 
 ### Core Gameplay
 
@@ -97,7 +97,7 @@ The game uses **three proxies** (Game, Hero, Inventory), each with logic/storage
 
 | Contract | Path | Description |
 |----------|------|-------------|
-| **Oracle** | `src/libraries/Randao.sol` | Wraps `block.prevrandao` for on-chain RNG used in combat, floor generation, shop, and forge. |
+| **PREVRANDAO** | `src/libraries/Randao.sol` | Wraps `block.prevrandao` for on-chain RNG used in combat, floor generation, shop, and forge. |
 | **VRF** | `src/GameLogic.sol` | Chainlink VRF V2 Plus integration: after a player wins a battle, the contract requests random words from VRF to determine loot rewards. The `fulfillRandomWords` callback mints assets directly without a backend. |
 
 **VRF Architecture:**

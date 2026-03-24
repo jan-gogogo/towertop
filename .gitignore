@@ -11,6 +11,7 @@ broadcast/
 # Docs
 docs/design
 docs/questions
+docs/deploy
 
 
 # Dotenv file
@@ -22,3 +23,4 @@ tower.json
 foundry.lock
 
 .DS_Store
+.env

@@ -71,8 +71,11 @@ contract DeployGame is Script {
         vm.stopBroadcast();
 
         console.log("Game proxy (user entry):", gameProxy);
+        console.log("Game Impl:              ", address(gameImpl));
         console.log("Hero proxy:             ", heroProxy);
+        console.log("Hero Impl:              ", address(heroImpl));
         console.log("Inventory proxy:        ", inventoryProxy);
+        console.log("Inventory Impl:         ", address(inventoryImpl));
         console.log("GameToken:              ", token);
         console.log("GameAssets:             ", assets);
         console.log("Proxy admin (owner):    ", owner);
