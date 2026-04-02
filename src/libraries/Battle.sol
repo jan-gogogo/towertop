@@ -6,6 +6,7 @@ import {Property, EquipmentType, EquipmentMaterials} from "./Property.sol";
 import {FloorIndex} from "./FloorIndex.sol";
 import {Rarity} from "./Attribute.sol";
 import {Seed} from "./Seed.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 library Battle {
     using Seed for bytes32;
@@ -111,9 +112,11 @@ library Battle {
     function rewardItems(bytes32 seed, uint256 floorIndex) internal pure returns (uint256[] memory assetIds) {
         unchecked {
             bool isBoss = floorIndex.isBossFloor();
-            // 1 or 2
-            uint256 count = (uint8(seed[4]) % 2) + 1;
-            // around 5% or 0
+            // item count range [0,1,2]
+            uint256 count = uint8(seed[4]) % 3;
+            if (count == 0) return new uint256[](0);
+
+            // If it's a Boss floor and above floor 69, there is a 5% chance to obtain an S-rank items
             uint8 s = (isBoss && floorIndex > 69) ? 13 : 0;
 
             assetIds = new uint256[](count);
@@ -182,9 +185,12 @@ library Battle {
     ) internal pure returns (uint256) {
         uint256 damage = 1;
 
-        if (attack > defense) {
-            damage = attack - defense;
-        }
+        // if (attack > defense) {
+        //     damage = attack - defense;
+        // }
+
+        // damage = (attack * 100) / (100 + defense);
+        damage = Math.mulDiv(attack, 100, 100 + defense);
 
         if (isElementalAdvantage && damage > 1) {
             damage = (damage * 110) / 100;

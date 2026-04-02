@@ -146,17 +146,14 @@ library Property {
         if (itemId < 101 || itemId > 104) {
             revert WrongPotionId();
         }
-        unchecked {
-            Rarity rarity = Rarity(itemId - 101);
-            return calPotionValue(rarity);
-        }
+        Rarity rarity = Rarity(itemId - 101);
+        return calPotionValue(rarity);
     }
 
     function calPotionValue(Rarity rarity) internal pure returns (uint16) {
-        // C=15，B=30，A=60，S=120 -> 15 * 2^rarity
-        unchecked {
-            return uint16(15 * (2 ** uint256(rarity)));
-        }
+        // C=50，B=100，A=200
+        // S=1000
+        return rarity == Rarity.S ? 1000 : uint16(50 * (2 ** uint256(rarity)));
     }
 
     function pushEquipmentSword(Equipment[] storage arr, EquipmentMaterials materials, Rarity rarity, uint8 level)
@@ -293,18 +290,16 @@ library Property {
         if (!isValidBookOrPotion(itemId)) revert WrongItemId();
 
         uint256 id = itemId;
-        uint256 add = 3;
-        uint256 mul = 5;
-        unchecked {
-            if (id > 100) {
-                // potion
-                add = 2;
-                mul = 4;
-                id -= 100;
-            }
-            id--;
-            return (mul * id + add) * 1 ether;
+        uint256 add = 30;
+        uint256 mul = 50;
+        if (id > 100) {
+            // potion
+            add = 20;
+            mul = 40;
+            id -= 100;
         }
+        id--;
+        return (mul * id + add) * 1 ether;
     }
 
     function upgradeEquipmentCost(uint8 curLevel) internal pure returns (uint256) {
@@ -324,25 +319,20 @@ library Property {
     }
 
     function determineMerge(uint8 random, Rarity rarity) internal pure returns (bool) {
-        unchecked {
-            uint8 p = 0;
-            if (Rarity.C == rarity) {
-                p = 157; // 60%
-            } else if (Rarity.B == rarity) {
-                p = 79; // 30%
-            } else {
-                p = 13; // 5%
-            }
-            return random < p;
+        uint8 p = 0;
+        if (Rarity.C == rarity) {
+            p = 157; // 60%
+        } else if (Rarity.B == rarity) {
+            p = 79; // 30%
+        } else {
+            p = 13; // 5%
         }
+        return random < p;
     }
 
-    function mergeEquipmentCost(uint8 curLevel, Rarity curRarity) internal pure returns (uint256) {
-        //cost_merge = 5 + 3 * mainLevel + 5 * rarity_oldIndex
-        // overflow not possible because curLevel <=25, curRarity <=3
-        unchecked {
-            return (uint256(curLevel) * 3 + uint256(curRarity) * 5 + 5) * 1 ether;
-        }
+    function mergeEquipmentCost(Rarity curRarity) internal pure returns (uint256) {
+        // C: 50 coins, B: 100 coins, A: 150 coins
+        return (uint256(curRarity) * 5 + 5) * 10 ether;
     }
 
     function isValidBookOrPotion(uint256 itemId) private pure returns (bool) {

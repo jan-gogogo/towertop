@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {RouterTestBase} from "./RouterTestBase.sol";
 import {IGameLogic} from "../src/interfaces/IGameLogic.sol";
-import {Property} from "../src/libraries/Property.sol";
 
 /**
  * Unit tests for Router.born (via IGameLogic).
@@ -28,8 +27,6 @@ contract BornTest is RouterTestBase {
         gameLogic.born();
 
         assertEq(gameToken.balanceOf(user), 1 ether, "player should receive 1 ether");
-        assertEq(gameAssets.balanceOf(user, Property.POTION_C_ID), 1, "player should have 1 potion");
-        assertEq(gameAssets.balanceOf(user, 1e9), 1, "player should have 1 sword (first id 1e9)");
         assertEq(gameAssets.balanceOf(user, 4e9), 1, "player should have 1 puppet (first id 4e9)");
     }
 

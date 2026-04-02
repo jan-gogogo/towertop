@@ -324,7 +324,7 @@ abstract contract InventoryLogic is IInventoryLogic {
             if (mainRef.rarity != subRef.rarity) revert CannotMerge();
         }
         if (mainRef.rarity == Rarity.S) revert ReachedMaxLevel();
-        cost = Property.mergeEquipmentCost(mainRef.level, mainRef.rarity);
+        cost = Property.mergeEquipmentCost(mainRef.rarity);
         if (Property.determineMerge(uint8(mergeSeed[0]), mainRef.rarity)) _equipmentEvolve(mainRef);
         delete warehouse[subIdx];
         delete _equipments[subId];

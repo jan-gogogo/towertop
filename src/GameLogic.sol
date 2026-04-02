@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
-import {IGameLogic} from "./interfaces/IGameLogic.sol";
-import {IHeroLogic} from "./interfaces/IHeroLogic.sol";
-import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
-import {IGameToken} from "./interfaces/IGameToken.sol";
-import {IGameAssets} from "./interfaces/IGameAssets.sol";
-import {Player, AbilitiesExtra, Character, RewardWinner} from "./libraries/Character.sol";
-import {Rarity} from "./libraries/Attribute.sol";
+import {Seed} from "./libraries/Seed.sol";
 import {Aoka} from "./libraries/Enemy.sol";
 import {Battle} from "./libraries/Battle.sol";
-import {Property, Equipment, EquipmentType, EquipmentMaterials} from "./libraries/Property.sol";
-import {Floor} from "./libraries/Environment.sol";
-import {Seed} from "./libraries/Seed.sol";
 import {Randao} from "./libraries/Randao.sol";
-import {VRFConsumerBaseV2Upgradeable} from "@chainlink/src/v0.8/vrf/dev/VRFConsumerBaseV2Upgradeable.sol";
-import {IVRFCoordinatorV2Plus} from "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
+import {Rarity} from "./libraries/Attribute.sol";
+import {Floor} from "./libraries/Environment.sol";
+import {IGameLogic} from "./interfaces/IGameLogic.sol";
+import {IHeroLogic} from "./interfaces/IHeroLogic.sol";
+import {IGameToken} from "./interfaces/IGameToken.sol";
+import {IGameAssets} from "./interfaces/IGameAssets.sol";
+import {IProtocol} from "./interfaces/IProtocol.sol";
+import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
+import {Player, AbilitiesExtra, Character, RewardWinner} from "./libraries/Character.sol";
 import {VRFV2PlusClient} from "@chainlink/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import {Property, Equipment, EquipmentType, EquipmentMaterials} from "./libraries/Property.sol";
+import {IVRFCoordinatorV2Plus} from "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
+import {VRFConsumerBaseV2Upgradeable} from "@chainlink/src/v0.8/vrf/dev/VRFConsumerBaseV2Upgradeable.sol";
 
 /**
  * @title GameLogic
@@ -38,10 +39,11 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
     bytes32 public _keyHash;
     uint256 public _subscription;
 
+    IProtocol public _protocol;
     IHeroLogic public _heroLogic;
-    IInventoryLogic public _inventoryLogic;
     IGameToken public _gameToken;
     IGameAssets public _gameAssets;
+    IInventoryLogic public _inventoryLogic;
 
     IVRFCoordinatorV2Plus public _vrfCoordinator;
 
@@ -57,21 +59,8 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         if (_heroLogic.getPlayer(msg.sender).createAt > 0) revert PlayerAlreadyExists();
         _heroLogic.addPlayer(msg.sender, Character.initPlayer());
 
-        uint256 itemId = Property.POTION_C_ID;
-        _inventoryLogic.addItem(msg.sender, itemId);
-
-        uint256 swordId = _inventoryLogic.addEquipment(msg.sender, _newHandSword());
         uint256 puppetId = _inventoryLogic.addPuppet(msg.sender, uint8(Rarity.C), uint40(block.timestamp));
-
-        uint256[] memory ids = new uint256[](3);
-        uint256[] memory values = new uint256[](3);
-        ids[0] = itemId;
-        ids[1] = swordId;
-        ids[2] = puppetId;
-        values[0] = 1;
-        values[1] = 1;
-        values[2] = 1;
-        _gameAssets.mintBatch(msg.sender, ids, values, "");
+        _gameAssets.mint(msg.sender, puppetId, 1, "");
         _gameToken.mint(msg.sender, 1 ether);
 
         bytes32 seed = Randao.getSeed().change(5, SEED_MIX_FLOOR);
@@ -125,10 +114,17 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         });
 
         (bool playerWin, uint8 curFloorIndex, uint8 enemyLevel) = _heroLogic.combat(msg.sender, seed, enemySlot, ae);
-
         if (playerWin) {
             // Request Chainlink VRF random words for generating battle reward loot
-            _requestRandomWordsForReward(msg.sender, curFloorIndex);
+            // _requestRandomWordsForReward(msg.sender, curFloorIndex);
+
+            (uint256[] memory assetIds, uint256[] memory values) =
+                _inventoryLogic.rewardWinner(msg.sender, seed, curFloorIndex);
+
+            if (assetIds.length > 0 && values.length > 0) {
+                _gameAssets.mintBatch(msg.sender, assetIds, values, "");
+            }
+
             _heroLogic.playerLevelUp(msg.sender, Battle.calRewardExperience(enemyLevel, curFloorIndex));
         }
     }
@@ -288,9 +284,7 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
     }
 
     function _healToFullCost(uint8 level) internal pure returns (uint256) {
-        unchecked {
-            return (5 + uint256(level) * 2) * 1 ether;
-        }
+        return (5 + uint256(level) * 2) * 1 ether;
     }
 
     function _newHandSword() private pure returns (Equipment memory) {
@@ -321,6 +315,11 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         );
         _rewards[requestId] = RewardWinner({player: addr, floorIndex: floorIndex});
         emit RequestRandom(addr, requestId, floorIndex);
+    }
+
+    function _spendToken(address account, uint256 amount) private {
+        _gameToken.burnFromApprove(account, amount);
+        _protocol.syncFloorPriceAfterBurn();
     }
 
     function _onlyRegistered() private view {

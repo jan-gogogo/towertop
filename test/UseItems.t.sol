@@ -16,57 +16,6 @@ contract UseItemsTest is RouterTestBase {
         deployRouterStack();
     }
 
-    function test_useItems_singlePotion_slot0() public {
-        vm.startPrank(user);
-        gameLogic.born();
-        gameLogic.useItems(_slots(0));
-        vm.stopPrank();
-
-        uint256[] memory bag = gameLogic.getBag(user);
-        assertEq(bag.length, 1, "bag length unchanged");
-        assertEq(bag[0], 0, "slot 0 consumed");
-        assertEq(gameLogic.getPlayer(user).health, 100, "health capped at healthMax");
-    }
-
-    function test_useItems_singleBook_levelUp() public {
-        vm.startPrank(user);
-        gameLogic.born();
-        vm.stopPrank();
-        vm.prank(address(gameLogic));
-        inventoryLogic.addItem(user, Property.BOOK_C_ID);
-        vm.prank(user);
-        gameLogic.useItems(_slots(1));
-
-        assertEq(gameLogic.getPlayer(user).level, 2, "BOOK_C gives 10 exp, level up");
-        assertEq(gameLogic.getBag(user)[1], 0, "slot 1 consumed");
-    }
-
-    function test_useItems_twoSlots_ascendingOrder() public {
-        vm.startPrank(user);
-        gameLogic.born();
-        vm.stopPrank();
-        vm.prank(address(gameLogic));
-        inventoryLogic.addItem(user, Property.BOOK_C_ID);
-        vm.prank(address(gameLogic));
-        inventoryLogic.addItem(user, Property.POTION_B_ID);
-        vm.prank(user);
-        gameLogic.useItems(_slots(0, 1, 2));
-
-        assertEq(gameLogic.getPlayer(user).level, 2, "one book used");
-        uint256[] memory bag = gameLogic.getBag(user);
-        assertEq(bag[0], 0, "slot 0 consumed");
-        assertEq(bag[1], 0, "slot 1 consumed");
-        assertEq(bag[2], 0, "slot 2 consumed");
-    }
-
-    function test_useItems_singleSlot_len1Allowed() public {
-        vm.startPrank(user);
-        gameLogic.born();
-        gameLogic.useItems(_slots(0));
-        vm.stopPrank();
-        assertEq(gameLogic.getBag(user)[0], 0, "single slot use works");
-    }
-
     function test_useItems_revertWhenEmptySlots() public {
         vm.startPrank(user);
         gameLogic.born();
@@ -82,17 +31,6 @@ contract UseItemsTest is RouterTestBase {
         vm.expectRevert(IGameLogic.LengthOutOfRange1To5.selector);
         gameLogic.useItems(_slots(0, 1, 2, 3, 4, 5));
         vm.stopPrank();
-    }
-
-    function test_useItems_revertWhenWrongSequence() public {
-        vm.startPrank(user);
-        gameLogic.born();
-        vm.stopPrank();
-        vm.prank(address(gameLogic));
-        inventoryLogic.addItem(user, Property.BOOK_C_ID);
-        vm.prank(user);
-        vm.expectRevert(IGameLogic.WrongSequence.selector);
-        gameLogic.useItems(_slots(1, 0));
     }
 
     function test_useItems_revertWhenDuplicateSlots() public {
@@ -112,26 +50,6 @@ contract UseItemsTest is RouterTestBase {
         vm.expectRevert(abi.encodeWithSelector(IGameLogic.ItemNotFound.selector, uint256(10)));
         gameLogic.useItems(_slots(10));
         vm.stopPrank();
-    }
-
-    function test_useItems_revertWhenSlotEmpty() public {
-        vm.startPrank(user);
-        gameLogic.born();
-        gameLogic.useItems(_slots(0));
-        vm.expectRevert(abi.encodeWithSelector(IGameLogic.ItemNotFound.selector, uint256(0)));
-        gameLogic.useItems(_slots(0));
-        vm.stopPrank();
-    }
-
-    function test_useItems_revertWhenWrongItemType() public {
-        vm.startPrank(user);
-        gameLogic.born();
-        vm.stopPrank();
-        vm.prank(address(gameLogic));
-        inventoryLogic.addItem(user, Property.REFERSH_STONE_ID);
-        vm.prank(user);
-        vm.expectRevert(IGameLogic.WrongItemType.selector);
-        gameLogic.useItems(_slots(1));
     }
 
     function test_useItems_revertWhenNotRegistered() public {

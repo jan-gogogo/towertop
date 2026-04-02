@@ -20,7 +20,7 @@ contract GameAssets is ERC1155, IGameAssets {
     constructor(string memory uri) ERC1155(uri) {}
 
     /// @notice once set, it cannot be changed
-    function setProxy(address proxyAddr) external {
+    function authorize(address proxyAddr) external {
         if (_permit != address(0)) revert ProxyAddressAlreadySet();
         _permit = proxyAddr;
     }
