@@ -45,5 +45,5 @@ interface IHeroLogic {
     function getPlayer(address addr) external view returns (Player memory);
     function getFloor(address addr) external view returns (Floor memory);
     function getEnemies(address addr) external view returns (Aoka[] memory);
-    function getEquippedIds(address addr) external view returns (uint256[4] memory);
+    function getEquippedIds(address addr) external view returns (uint256[3] memory);
 }

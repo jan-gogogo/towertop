@@ -44,11 +44,6 @@ struct Equipment {
     uint16 stunChance; // 0-100
 }
 
-struct Puppet {
-    Rarity rarity;
-    uint40 lastClaimAt;
-}
-
 library Property {
     error WrongPotionId();
     error WrongBookId();

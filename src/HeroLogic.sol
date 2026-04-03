@@ -20,7 +20,7 @@ abstract contract HeroLogic is IHeroLogic {
     address public _permit;
 
     mapping(address => Player) internal _players;
-    mapping(address => uint256[4]) internal _equipped; // 0:Sword 1:Armor 2:Shield 3:Puppet
+    mapping(address => uint256[3]) internal _equipped; // 0:Sword 1:Armor 2:Shield
     mapping(address => Floor) internal _floor;
 
     modifier onlyPermit() {
@@ -84,7 +84,7 @@ abstract contract HeroLogic is IHeroLogic {
     }
 
     function equip(address addr, uint256 equipmentId, uint256 slot) external onlyPermit {
-        if (slot > 3) revert ArrayOutOfBounds();
+        if (slot > 2) revert ArrayOutOfBounds();
         _equipped[addr][slot] = equipmentId;
     }
 
@@ -150,7 +150,7 @@ abstract contract HeroLogic is IHeroLogic {
         return _floor[addr].enemies;
     }
 
-    function getEquippedIds(address addr) external view returns (uint256[4] memory) {
+    function getEquippedIds(address addr) external view returns (uint256[3] memory) {
         return _equipped[addr];
     }
 
@@ -176,8 +176,8 @@ abstract contract HeroLogic is IHeroLogic {
     }
 
     function _findEquippedSlot(address addr, uint256 equipmentId) private view returns (uint256) {
-        uint256[4] storage slots = _equipped[addr];
-        for (uint256 i = 0; i < 4; i++) {
+        uint256[3] storage slots = _equipped[addr];
+        for (uint256 i = 0; i < 3; i++) {
             if (slots[i] == equipmentId) return i;
         }
         revert IHeroLogic.NotEquippedId(equipmentId);

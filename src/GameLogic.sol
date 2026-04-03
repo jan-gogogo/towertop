@@ -59,8 +59,6 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         if (_heroLogic.getPlayer(msg.sender).createAt > 0) revert PlayerAlreadyExists();
         _heroLogic.addPlayer(msg.sender, Character.initPlayer());
 
-        uint256 puppetId = _inventoryLogic.addPuppet(msg.sender, uint8(Rarity.C), uint40(block.timestamp));
-        _gameAssets.mint(msg.sender, puppetId, 1, "");
         _gameToken.mint(msg.sender, 1 ether);
 
         bytes32 seed = Randao.getSeed().change(5, SEED_MIX_FLOOR);
@@ -98,7 +96,7 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
 
     function battle(uint256 enemySlot) external onlyRegistered {
         bytes32 seed = Randao.getSeed();
-        uint256[4] memory equippedIds = _heroLogic.getEquippedIds(msg.sender);
+        uint256[3] memory equippedIds = _heroLogic.getEquippedIds(msg.sender);
         (Equipment memory e0, Equipment memory e1, Equipment memory e2) = _getEquipped(equippedIds);
 
         AbilitiesExtra memory ae = AbilitiesExtra({
@@ -216,7 +214,7 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
     }
 
     function _mergeEquipment(uint256 slot, uint256 mainEquipmentId, uint256 subEquipmentId) private {
-        uint256[4] memory ids = _heroLogic.getEquippedIds(msg.sender);
+        uint256[3] memory ids = _heroLogic.getEquippedIds(msg.sender);
         if (ids[slot] != mainEquipmentId) revert InvalidEquipmentId(mainEquipmentId);
         uint256 cost = _inventoryLogic.mergeEquipment(msg.sender, mainEquipmentId, subEquipmentId, Randao.getSeed());
         if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
@@ -273,7 +271,7 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         emit FulfillRandom(rw.player, requestId, random);
     }
 
-    function _getEquipped(uint256[4] memory ids)
+    function _getEquipped(uint256[3] memory ids)
         internal
         view
         returns (Equipment memory e0, Equipment memory e1, Equipment memory e2)

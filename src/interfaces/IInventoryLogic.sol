@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
-import {Equipment, Puppet} from "../libraries/Property.sol";
+import {Equipment} from "../libraries/Property.sol";
 
 interface IInventoryLogic {
     error Unauthorized();
@@ -24,7 +24,6 @@ interface IInventoryLogic {
     function addItem(address addr, uint256 itemId) external;
     function addItems(address addr, uint256[] calldata itemIds) external;
     function addEquipment(address addr, Equipment calldata equipment) external returns (uint256 equipmentId);
-    function addPuppet(address addr, uint8 rarity, uint40 lastClaimAt) external returns (uint256 puppetId);
     function removeFromWarehouse(address addr, uint256 equipmentId) external;
     function addToWarehouse(address addr, uint256 equipmentId) external;
     function useItems(address addr, uint256[] calldata slots)
@@ -44,6 +43,5 @@ interface IInventoryLogic {
     function getBag(address addr) external view returns (uint256[] memory itemIds);
     function getWarehouse(address addr) external view returns (uint256[] memory equipmentIds);
     function getEquipment(uint256 id) external view returns (Equipment memory);
-    function getPuppet(uint256 id) external view returns (Puppet memory);
     function isValidEquipment(uint256 id) external pure returns (bool);
 }

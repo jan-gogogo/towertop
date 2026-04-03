@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
 import {Rarity} from "./libraries/Attribute.sol";
-import {Property, Equipment, Puppet, EquipmentType, ItemType, EquipmentMaterials} from "./libraries/Property.sol";
+import {Property, Equipment, EquipmentType, ItemType, EquipmentMaterials} from "./libraries/Property.sol";
 import {Seed} from "./libraries/Seed.sol";
 import {Battle} from "./libraries/Battle.sol";
 import {Rarity} from "./libraries/Attribute.sol";
@@ -10,10 +10,10 @@ import {Rarity} from "./libraries/Attribute.sol";
 /**
  * @title InventoryLogic
  * @author Jan
- * @notice Holds bag, warehouse, equipment and puppet data. Handles add/remove items, use consumables (book/potion),
+ * @notice Holds bag, warehouse, equipment data. Handles add/remove items, use consumables (book/potion),
  *         shop buy, equipment upgrade/merge, and battle rewards. Callable only by the permitted Game proxy.
  * @dev Used behind a proxy (e.g. InventoryV1). setPermit(gameProxy) must be called once after deployment.
- *      Equipment IDs: 1e9..4e9-1 for gear, 4e9..5e9-1 for puppets.
+ *      Equipment IDs: 1e9..4e9-1 for gear.
  */
 abstract contract InventoryLogic is IInventoryLogic {
     using Seed for bytes32;
@@ -28,19 +28,15 @@ abstract contract InventoryLogic is IInventoryLogic {
     uint256 private constant BAG_CAP = 100;
     uint256 private constant WAREHOUSE_CAP = 100;
     uint256 private constant EQUIPMENT_ID_START = 1e9;
-    uint256 private constant EQUIPMENT_ID_CAP = 4e9;
-    uint256 private constant PUPPET_ID_START = 4e9;
-    uint256 private constant PUPPET_ID_CAP = 5e9;
+    uint256 private constant EQUIPMENT_ID_CAP = 4e9; // [1e9,4e9]
 
     address public _permit;
 
     mapping(address => uint256[]) private _bag;
     mapping(address => uint256[]) private _warehouse;
     mapping(uint256 id => Equipment) private _equipments;
-    mapping(uint256 id => Puppet) private _puppets;
 
     uint256 private _nextEquipmentId;
-    uint256 private _nextPuppetId;
 
     modifier onlyPermit() {
         _onlyPermit();
@@ -66,15 +62,6 @@ abstract contract InventoryLogic is IInventoryLogic {
         returns (uint256 equipmentId)
     {
         return _addEquipmentInternal(addr, equipment);
-    }
-
-    function addPuppet(address addr, uint8 rarity, uint40 lastClaimAt) external onlyPermit returns (uint256 puppetId) {
-        uint256 latest = _nextPuppetId;
-        if (latest >= PUPPET_ID_CAP) revert CapacityExceeded();
-        _puppets[latest] = Puppet({rarity: Rarity(rarity), lastClaimAt: lastClaimAt});
-        _nextPuppetId++;
-        _addToWarehouse(addr, latest);
-        return latest;
     }
 
     function removeFromWarehouse(address addr, uint256 equipmentId) external onlyPermit {
@@ -141,7 +128,7 @@ abstract contract InventoryLogic is IInventoryLogic {
     function upgrade(address, uint256 equipmentId, bytes32 seed) external onlyPermit returns (uint256 cost) {
         if (equipmentId == 0) revert InvalidEquipmentId(equipmentId);
         Equipment storage e = _equipments[equipmentId];
-        if (equipmentId >= PUPPET_ID_START) revert InvalidEquipmentId(equipmentId);
+        if (equipmentId > EQUIPMENT_ID_CAP) revert InvalidEquipmentId(equipmentId);
         uint8 curLevel = e.level;
         if (curLevel >= Property.MAX_EQUIPMENT_LEVEL) revert ReachedMaxLevel();
         cost = Property.upgradeEquipmentCost(curLevel);
@@ -158,7 +145,7 @@ abstract contract InventoryLogic is IInventoryLogic {
     {
         if (mainId == 0 || subId == 0) revert InvalidEquipmentId(0);
         Equipment storage mainRef = _equipments[mainId];
-        if (mainId >= PUPPET_ID_START) revert InvalidEquipmentId(mainId);
+        if (mainId > EQUIPMENT_ID_CAP) revert InvalidEquipmentId(mainId);
         return _mergeEquipment(addr, mainRef.etype, mainId, subId, seed);
     }
 
@@ -217,19 +204,14 @@ abstract contract InventoryLogic is IInventoryLogic {
         return _equipments[id];
     }
 
-    function getPuppet(uint256 id) external view returns (Puppet memory) {
-        return _puppets[id];
-    }
-
     function isValidEquipment(uint256 id) external pure returns (bool) {
-        return (id >= EQUIPMENT_ID_START && id < EQUIPMENT_ID_CAP) || (id >= PUPPET_ID_START && id < PUPPET_ID_CAP);
+        return id >= EQUIPMENT_ID_START && id < EQUIPMENT_ID_CAP;
     }
 
     /// @notice Initialize next-IDs (for proxy: call from implementation's initialize(); constructor only runs on impl, not on proxy).
     function _initNextIds() internal {
         if (_nextEquipmentId != 0) return;
         _nextEquipmentId = EQUIPMENT_ID_START;
-        _nextPuppetId = PUPPET_ID_START;
     }
 
     /// @notice add a new weaponId to player's warehouse
@@ -280,7 +262,7 @@ abstract contract InventoryLogic is IInventoryLogic {
 
     function _addEquipmentInternal(address addr, Equipment memory equipment) private returns (uint256) {
         uint256 latest = _nextEquipmentId;
-        if (latest >= EQUIPMENT_ID_CAP) revert CapacityExceeded();
+        if (latest > EQUIPMENT_ID_CAP) revert CapacityExceeded();
         _equipments[latest] = equipment;
         _nextEquipmentId++;
         _addToWarehouse(addr, latest);
@@ -305,7 +287,7 @@ abstract contract InventoryLogic is IInventoryLogic {
     {
         if (mainId == subId) revert SameEquipmentIds();
         Equipment storage subRef = _equipments[subId];
-        if (subId >= PUPPET_ID_START || subRef.etype != typ) revert InvalidEquipmentId(subId);
+        if (subRef.etype != typ) revert InvalidEquipmentId(subId);
         uint256[] storage warehouse = _warehouse[addr];
         uint256 len = warehouse.length;
         uint256 subIdx = len;
