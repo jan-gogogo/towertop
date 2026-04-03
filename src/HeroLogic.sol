@@ -133,7 +133,6 @@ abstract contract HeroLogic is IHeroLogic {
         } else if (typeIndex == 1) {
             if (slot < floor.shop.equipments.length) {
                 delete floor.shop.equipments[slot];
-                delete floor.shop.equipmentPrices[slot];
             }
         }
     }

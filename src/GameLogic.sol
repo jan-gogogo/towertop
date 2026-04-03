@@ -171,7 +171,14 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         _inventoryLogic.addToWarehouse(msg.sender, equipmentId);
     }
 
-    function buy(uint256 typeIndex, uint256 slot) external onlyRegistered {
+    function buy(uint256 typeIndex, uint256 slot, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        onlyRegistered
+    {
+        _gameToken.permit(msg.sender, address(this), amount, deadline, v, r, s);
+        _gameToken.burnFromApprove(msg.sender, amount);
+        // _protocol.syncFloorPriceAfterBurn();
+
         if (typeIndex > 1) revert InvalidTypeIndex(typeIndex);
         Floor memory floor = _heroLogic.getFloor(msg.sender);
         uint256 cost;

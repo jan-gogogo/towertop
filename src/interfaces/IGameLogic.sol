@@ -102,7 +102,8 @@ interface IGameLogic {
      * @param typeIndex 0: item (book/potion), 1: equipment (sword/shield/armor in shop.equipments)
      * @param slot index in shop.items (typeIndex=0) or shop.equipments (typeIndex=1)
      */
-    function buy(uint256 typeIndex, uint256 slot) external;
+    function buy(uint256 typeIndex, uint256 slot, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external;
 
     /**
      * @notice upgrade a single equipment by spending coin; level increases on success

@@ -20,10 +20,10 @@ struct Foundry {
 }
 
 struct Shop {
-    uint256[] price;
+    // uint256[] price;
     uint256[] items;
     Equipment[] equipments;
-    uint256[] equipmentPrices;
+    // uint256[] equipmentPrices;
 }
 
 library Environment {
@@ -85,7 +85,7 @@ library Environment {
     ///         or consumables (book/potion) by floorIndex and seed.
     /// @dev    Slot count: 2 + (floorIndex % 3). Type by weight:
     ///         equip = 40 + floorIndex/5 (split sword/shield/armor 1/3 each),
-    ///         book = 30, potion = 50. Uses seed[i] for rarity/materials,
+    ///         book = 20, potion = 60. Uses seed[i] for rarity/materials,
     ///         seed[16+i] for type roll.
     function fillShop(Shop storage shop, bytes32 seed, uint256 floorIndex) internal {
         // overflow not possible because floorIndex <= 99
@@ -93,8 +93,8 @@ library Environment {
             uint256 slotCount = 2 + (floorIndex % 3);
 
             uint256 equipWeight = 40 + floorIndex / 5;
-            uint256 bookWeight = 30;
-            uint256 potionWeight = 50;
+            uint256 bookWeight = 20;
+            uint256 potionWeight = 60;
             uint256 totalWeight = equipWeight + bookWeight + potionWeight;
 
             uint256 swordBorder = equipWeight / 3;
@@ -115,14 +115,11 @@ library Environment {
                     } else {
                         Property.pushEquipmentArmor(shop.equipments, materials, rarity, level);
                     }
-                    shop.equipmentPrices.push(Property.equipPrice(level, rarity));
                 } else {
                     if (r < bookBorder) {
                         shop.items.push(Property.getBookId(rarity));
-                        shop.price.push(Property.calBookValue(rarity));
                     } else {
                         shop.items.push(Property.getPotionId(rarity));
-                        shop.price.push(Property.calPotionValue(rarity));
                     }
                 }
             }

@@ -131,9 +131,9 @@ library Property {
     }
 
     function calBookValue(Rarity rarity) internal pure returns (uint32) {
-        // C=10, B=20, A=40, S=80  ->  10 * 2^rarity
+        // C=40, B=80, A=160, S=320  ->  40 * 2^rarity
         unchecked {
-            return uint32(10 * (2 ** uint256(rarity)));
+            return uint32(40 * (2 ** uint256(rarity)));
         }
     }
 
@@ -276,25 +276,27 @@ library Property {
     }
 
     function equipmentCost(uint8 level, Rarity rarity) internal pure returns (uint256) {
-        unchecked {
-            return (3 * uint256(level) + 8 * uint256(rarity) + 2) * 1 ether;
-        }
+        return (3 * uint256(level) + 8 * uint256(rarity) + 2) * 1 ether;
     }
 
     function itemCost(uint256 itemId) internal pure returns (uint256) {
         if (!isValidBookOrPotion(itemId)) revert WrongItemId();
+        // book   25, 50, 100, 200
+        // potion 4, 8, 16, 150
+
+        if (POTION_S_ID == itemId) return 150;
 
         uint256 id = itemId;
-        uint256 add = 30;
-        uint256 mul = 50;
+        uint256 initVal = 4;
         if (id > 100) {
             // potion
-            add = 20;
-            mul = 40;
             id -= 100;
+        } else {
+            // book
+            initVal = 25;
         }
-        id--;
-        return (mul * id + add) * 1 ether;
+        if (id > 0) id--;
+        return (initVal * 2 ** id) * 1 ether;
     }
 
     function upgradeEquipmentCost(uint8 curLevel) internal pure returns (uint256) {
