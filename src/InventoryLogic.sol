@@ -121,7 +121,7 @@ abstract contract InventoryLogic is IInventoryLogic {
         onlyPermit
         returns (uint256 cost, uint256 assetId)
     {
-        cost = Property.equipmentCost(equipment.level, equipment.rarity);
+        cost = Property.equipmentCost(equipment.growth, equipment.rarity);
         assetId = _addEquipmentInternal(addr, equipment);
     }
 
@@ -131,9 +131,9 @@ abstract contract InventoryLogic is IInventoryLogic {
         if (equipmentId > EQUIPMENT_ID_CAP) revert InvalidEquipmentId(equipmentId);
         uint8 curLevel = e.level;
         if (curLevel >= Property.MAX_EQUIPMENT_LEVEL) revert ReachedMaxLevel();
-        cost = Property.upgradeEquipmentCost(curLevel);
+        cost = Property.upgradeEquipmentCost(e.rarity, curLevel);
         bytes32 upgradeSeed = seed.change(7, SEED_MIX_UPGRADE);
-        if (Property.determineUpgrade(uint8(upgradeSeed[0]), curLevel)) {
+        if (Property.determineUpgrade(uint8(upgradeSeed[0]), e.rarity, curLevel)) {
             _upgradeEquipment(equipmentId);
         }
     }
@@ -160,7 +160,6 @@ abstract contract InventoryLogic is IInventoryLogic {
             equipmentId = _rollEquipmentReward(winner, rewardSeed, floorIndex);
         }
         uint256[] memory itemIds = Battle.rewardItems(rewardSeed, floorIndex);
-        uint256 coinCount = Battle.rewardCoins(floorIndex);
 
         uint256 itemLen = itemIds.length;
         if (itemLen > 0) {
@@ -169,7 +168,6 @@ abstract contract InventoryLogic is IInventoryLogic {
 
         uint256 assetCount = itemLen;
         if (equipmentId > 0) assetCount++;
-        if (coinCount > 0) assetCount++;
 
         if (assetCount == 0) return (new uint256[](0), new uint256[](0));
 
@@ -185,10 +183,6 @@ abstract contract InventoryLogic is IInventoryLogic {
             assetIds[pos] = equipmentId;
             values[pos] = 1;
             pos++;
-        }
-        if (coinCount > 0) {
-            assetIds[pos] = Property.COIN_ID;
-            values[pos] = coinCount;
         }
     }
 
@@ -273,11 +267,9 @@ abstract contract InventoryLogic is IInventoryLogic {
         Equipment storage e = _equipments[equipmentId];
         e.level++;
         if (e.etype == EquipmentType.Sword) {
-            e.attack = Property.calAttackForSword(e.rarity, e.level);
-        } else if (e.etype == EquipmentType.Armor) {
-            e.defense = Property.calDefenseForArmor(e.rarity, e.level);
+            e.attack = Property.calMainAttribute(EquipmentType.Sword, e.growth, e.level);
         } else {
-            e.defense = Property.calDefenseForShield(e.rarity, e.level);
+            e.defense = Property.calMainAttribute(e.etype, e.growth, e.level);
         }
     }
 
@@ -315,19 +307,15 @@ abstract contract InventoryLogic is IInventoryLogic {
     function _equipmentEvolve(Equipment storage e) private {
         Rarity newRarity = Rarity(uint8(e.rarity) + 1);
         e.rarity = newRarity;
+
         if (e.etype == EquipmentType.Sword) {
-            (uint16 crit, uint16 critChance,, uint16 stunChance) = Property.calSecondAttributes(newRarity);
-            e.attack = Property.calAttackForSword(newRarity, e.level);
+            (uint16 crit, uint16 critChance) = Property.calSecondAttributeForSword(newRarity, e.growth);
             e.crit = crit;
             e.critChance = critChance;
-            e.stunChance = stunChance;
         } else if (e.etype == EquipmentType.Armor) {
-            e.defense = Property.calDefenseForArmor(newRarity, e.level);
-        } else {
-            (,, uint16 blockChance, uint16 stunChance) = Property.calSecondAttributes(newRarity);
-            e.blockChance = blockChance;
-            e.stunChance = stunChance;
-            e.defense = Property.calDefenseForShield(newRarity, e.level);
+            e.blockChance == Property.calSecondAttributeForArmor(newRarity, e.growth);
+        } else if (e.etype == EquipmentType.Shield) {
+            e.stunChance = Property.calSecondAttributeForShield(newRarity, e.growth);
         }
     }
 
@@ -343,27 +331,37 @@ abstract contract InventoryLogic is IInventoryLogic {
         private
         returns (uint256 equipmentId)
     {
+        uint16 growth = Property.getGrowthForVictory(uint8(rewardSeed[0]), uint8(rewardSeed[1]));
+
         (uint8 level, Rarity rarity, EquipmentMaterials materials, EquipmentType typ) =
             Battle.rewardEquipment(rewardSeed, floorIndex);
-        (uint16 crit, uint16 critChance, uint16 blockChance, uint16 stunChance) =
-            Property.calSecondAttributesDirectly(rarity);
 
         Equipment memory eq;
         eq.etype = typ;
         eq.materials = materials;
         eq.rarity = rarity;
         eq.level = level;
+        eq.growth = growth;
+
+        uint16 mainValue = Property.calMainAttribute(typ, growth, level);
+        uint16 attack = 0;
+        uint16 defense = 0;
+        if (EquipmentType.Sword == typ) {
+            attack = mainValue;
+        } else {
+            defense = mainValue;
+        }
+        eq.attack = attack;
+        eq.defense = defense;
+
         if (typ == EquipmentType.Sword) {
-            eq.attack = Property.calAttackForSword(rarity, level);
+            (uint16 crit, uint16 critChance) = Property.calSecondAttributeForSword(rarity, growth);
             eq.crit = crit;
             eq.critChance = critChance;
-            eq.stunChance = stunChance;
         } else if (typ == EquipmentType.Armor) {
-            eq.defense = Property.calDefenseForArmor(rarity, level);
+            eq.blockChance = Property.calSecondAttributeForArmor(rarity, growth);
         } else {
-            eq.defense = Property.calDefenseForShield(rarity, level);
-            eq.blockChance = blockChance;
-            eq.stunChance = stunChance;
+            eq.stunChance = Property.calSecondAttributeForShield(rarity, growth);
         }
         equipmentId = _addEquipmentInternal(winner, eq);
     }

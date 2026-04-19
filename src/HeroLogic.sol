@@ -5,6 +5,7 @@ import {Player, Character, AbilitiesExtra} from "./libraries/Character.sol";
 import {Floor, Environment} from "./libraries/Environment.sol";
 import {Aoka, Enemy} from "./libraries/Enemy.sol";
 import {Battle} from "./libraries/Battle.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /**
@@ -70,7 +71,7 @@ abstract contract HeroLogic is IHeroLogic {
         playerWin = (aokaHealthFinal == 0);
         if (!playerWin) {
             // If aoka wins, recover 20% health
-            aokaHealthFinal = aokaHealthFinal / 10 * 12;
+            aokaHealthFinal += Math.mulDiv(aokaHealthFinal, 2000, 10000);
             if (aokaHealthFinal > enemyHealthOri) {
                 aokaHealthFinal = enemyHealthOri;
             }
@@ -99,23 +100,29 @@ abstract contract HeroLogic is IHeroLogic {
         _constructFloorData(floor, floor.index, seed);
     }
 
-    function nextFloor(address addr, bytes32 seed) external onlyPermit {
+    function nextFloor(address addr, bytes32 seed) external onlyPermit returns (uint256 cost) {
         Floor storage floor = _floor[addr];
         uint8 curIndex = floor.index;
         if (curIndex >= 99) revert ReachedTheTopFloor();
+
         uint256 enemyCount = floor.enemies.length;
         for (uint256 i = 0; i < enemyCount; i++) {
             if (floor.enemies[i].health > 0) revert MustDefeatAllEenemies();
         }
         Environment.clearFloor(floor);
-        floor.index = curIndex + 1;
-        _constructFloorData(floor, floor.index, seed);
+        uint8 entryFloor = curIndex + 1;
+        floor.index = entryFloor;
+
+        cost = Environment.calEntryCost(uint256(entryFloor));
+
+        _constructFloorData(floor, uint256(entryFloor), seed);
     }
 
-    function circle(address addr, bytes32 seed) external onlyPermit {
+    function circle(address addr, bytes32 seed) external onlyPermit returns (uint256 cost) {
         Floor storage floor = _floor[addr];
         if (floor.index != 99) revert NotAt100Floor();
         Player storage player = _players[addr];
+        cost = Character.calCircleCost(player.courage);
         Character.circle(player);
         Environment.clearFloor(floor);
         _constructFloorData(floor, floor.index, seed);

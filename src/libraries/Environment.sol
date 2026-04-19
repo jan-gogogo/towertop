@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {Aoka} from "./Enemy.sol";
-import {Equipment, EquipmentMaterials, Property} from "./Property.sol";
 import {Rarity} from "./Attribute.sol";
 import {FloorIndex} from "./FloorIndex.sol";
+import {Equipment, EquipmentMaterials, EquipmentType, Property} from "./Property.sol";
 
 struct Floor {
     // 0–99
@@ -29,14 +29,12 @@ struct Shop {
 library Environment {
     /// @notice calculate the shop count on next floor
     function shopCountNextFloor(uint8 random, uint256 floorIndex) internal pure returns (uint256) {
-        if (floorIndex < 3) return 0;
+        if (floorIndex < 5) return 0;
 
-        // f = min(128, 51 + (floor_index * 256) / 200)
-        // random < f ? 1 : 0
         unchecked {
             // overflow not possible
             // because floorIndex ≤ 99
-            uint256 f = (floorIndex * 256) / 200 + 51;
+            uint256 f = floorIndex + 51;
             if (f > 128) f = 128;
             return uint256(random) < f ? 1 : 0;
         }
@@ -44,14 +42,12 @@ library Environment {
 
     /// @notice calculate the foundry count on next floor
     function foundryCountNextFloor(uint8 random, uint256 floorIndex) internal pure returns (uint256) {
-        if (floorIndex < 5) return 0;
+        if (floorIndex < 10) return 0;
 
-        // f = min(115, 38 + (floor_index * 256) / 250)
-        // random < f ? 1 : 0
         unchecked {
             // overflow not possible
             // because floorIndex ≤ 99
-            uint256 f = (floorIndex * 256) / 250 + 38;
+            uint256 f = floorIndex + 38;
             if (f > 115) f = 115;
             return uint256(random) < f ? 1 : 0;
         }
@@ -90,7 +86,7 @@ library Environment {
     function fillShop(Shop storage shop, bytes32 seed, uint256 floorIndex) internal {
         // overflow not possible because floorIndex <= 99
         unchecked {
-            uint256 slotCount = 2 + (floorIndex % 3);
+            uint256 slotCount = 2 + (uint256(seed) % 3);
 
             uint256 equipWeight = 40 + floorIndex / 5;
             uint256 bookWeight = 20;
@@ -101,19 +97,29 @@ library Environment {
             uint256 shieldBorder = equipWeight - swordBorder;
             uint256 bookBorder = equipWeight + bookWeight;
 
+            uint256 useCountOneRound = 5;
+
             for (uint256 i = 0; i < slotCount; i++) {
-                Rarity rarity = Property.calRarity(uint8(seed[i]), floorIndex);
-                uint256 r = uint256(uint8(seed[16 + i])) % totalWeight;
+                Rarity rarity = Property.calRarity(uint8(seed[i * useCountOneRound + 0]), floorIndex);
+                uint256 r = uint256(uint8(seed[i * useCountOneRound + 1])) % totalWeight;
 
                 if (r < equipWeight) {
                     uint8 level = Property.calEquipmentLevel(floorIndex);
-                    EquipmentMaterials materials = Property.calEquipmentMaterials(uint8(seed[i + slotCount]));
+                    EquipmentMaterials materials = Property.calEquipmentMaterials(uint8(seed[i * useCountOneRound + 2]));
+                    uint8 seedForGroth = uint8(seed[i * useCountOneRound + 3]);
+                    uint8 seedForScope = uint8(seed[i * useCountOneRound + 4]);
                     if (r < swordBorder) {
-                        Property.pushEquipmentSword(shop.equipments, materials, rarity, level);
+                        Property.pushEquipment(
+                            shop.equipments, EquipmentType.Sword, materials, rarity, level, seedForGroth, seedForScope
+                        );
                     } else if (r < shieldBorder) {
-                        Property.pushEquipmentShield(shop.equipments, rarity, level);
+                        Property.pushEquipment(
+                            shop.equipments, EquipmentType.Shield, materials, rarity, level, seedForGroth, seedForScope
+                        );
                     } else {
-                        Property.pushEquipmentArmor(shop.equipments, materials, rarity, level);
+                        Property.pushEquipment(
+                            shop.equipments, EquipmentType.Armor, materials, rarity, level, seedForGroth, seedForScope
+                        );
                     }
                 } else {
                     if (r < bookBorder) {
@@ -124,6 +130,12 @@ library Environment {
                 }
             }
         }
+    }
+
+    function calEntryCost(uint256 entryFloor) internal pure returns (uint256) {
+        if (entryFloor < 21) return 0;
+
+        return (entryFloor - 20) * 15e17; //1.5 ether
     }
 
     function clearFloor(Floor storage floor) internal {

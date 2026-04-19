@@ -36,8 +36,8 @@ interface IHeroLogic {
     function equip(address addr, uint256 equipmentId, uint256 slot) external;
     function unequip(address addr, uint256 equipmentId) external;
     function initFloor(address addr, bytes32 seed) external;
-    function nextFloor(address addr, bytes32 seed) external;
-    function circle(address addr, bytes32 seed) external;
+    function nextFloor(address addr, bytes32 seed) external returns (uint256 cost);
+    function circle(address addr, bytes32 seed) external returns (uint256 cost);
     function removeShopSlot(address addr, uint256 typeIndex, uint256 slot) external;
 
     function setFloorIndex(address addr, uint8 index) external;

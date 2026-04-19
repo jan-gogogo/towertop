@@ -12,9 +12,10 @@ import {IGameToken} from "./interfaces/IGameToken.sol";
 import {IGameAssets} from "./interfaces/IGameAssets.sol";
 import {IProtocol} from "./interfaces/IProtocol.sol";
 import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Player, AbilitiesExtra, Character, RewardWinner} from "./libraries/Character.sol";
 import {VRFV2PlusClient} from "@chainlink/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-import {Property, Equipment, EquipmentType, EquipmentMaterials} from "./libraries/Property.sol";
+import {Equipment, EquipmentType, EquipmentMaterials} from "./libraries/Property.sol";
 import {IVRFCoordinatorV2Plus} from "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
 import {VRFConsumerBaseV2Upgradeable} from "@chainlink/src/v0.8/vrf/dev/VRFConsumerBaseV2Upgradeable.sol";
 
@@ -59,7 +60,8 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         if (_heroLogic.getPlayer(msg.sender).createAt > 0) revert PlayerAlreadyExists();
         _heroLogic.addPlayer(msg.sender, Character.initPlayer());
 
-        _gameToken.mint(msg.sender, 1 ether);
+        uint256 swordId = _inventoryLogic.addEquipment(msg.sender, _newHandSword());
+        _gameAssets.mint(msg.sender, swordId, 1, "");
 
         bytes32 seed = Randao.getSeed().change(5, SEED_MIX_FLOOR);
         _heroLogic.initFloor(msg.sender, seed);
@@ -67,48 +69,48 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         emit Born(msg.sender);
     }
 
-    function deposit(uint256 amount) external {
-        if (amount < 1 ether) revert AmountAtLeast1e18();
-        // forge-lint: disable-next-line(erc20-unchecked-transfer)
-        _gameToken.transferFrom(msg.sender, address(this), amount);
-        _gameAssets.mint(msg.sender, Property.COIN_ID, amount * 10, "");
-    }
+    // function deposit(uint256 amount) external {
+    //     if (amount < 1 ether) revert AmountAtLeast1e18();
+    //     // forge-lint: disable-next-line(erc20-unchecked-transfer)
+    //     _gameToken.transferFrom(msg.sender, address(this), amount);
+    //     _gameAssets.mint(msg.sender, Property.COIN_ID, amount * 10, "");
+    // }
 
-    function depositWithPermit(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external {
-        if (amount < 1 ether) revert AmountAtLeast1e18();
-        _gameToken.permit(msg.sender, address(this), amount, deadline, v, r, s);
-        // forge-lint: disable-next-line(erc20-unchecked-transfer)
-        _gameToken.transferFrom(msg.sender, address(this), amount);
-        _gameAssets.mint(msg.sender, Property.COIN_ID, amount * 10, "");
-    }
+    // function depositWithPermit(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external {
+    //     if (amount < 1 ether) revert AmountAtLeast1e18();
+    //     _gameToken.permit(msg.sender, address(this), amount, deadline, v, r, s);
+    //     // forge-lint: disable-next-line(erc20-unchecked-transfer)
+    //     _gameToken.transferFrom(msg.sender, address(this), amount);
+    //     _gameAssets.mint(msg.sender, Property.COIN_ID, amount * 10, "");
+    // }
 
-    function withdraw(uint256 amount) external {
-        if (amount < 1 gwei) revert AmountAtLeast1e9();
-        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < amount) revert InsufficientCoin();
-        _gameAssets.burn(msg.sender, Property.COIN_ID, amount);
-        uint256 token = amount / 10;
-        if (_gameToken.balanceOf(address(this)) < token) revert InsufficientERC20();
-        uint256 burnAmount = token / 20;
-        // forge-lint: disable-next-line(erc20-unchecked-transfer)
-        _gameToken.transfer(msg.sender, token - burnAmount);
-        _gameToken.burn(address(this), burnAmount);
-    }
+    // function withdraw(uint256 amount) external {
+    //     if (amount < 1 gwei) revert AmountAtLeast1e9();
+    //     if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < amount) revert InsufficientCoin();
+    //     _gameAssets.burn(msg.sender, Property.COIN_ID, amount);
+    //     uint256 token = amount / 10;
+    //     if (_gameToken.balanceOf(address(this)) < token) revert InsufficientERC20();
+    //     uint256 burnAmount = token / 20;
+    //     // forge-lint: disable-next-line(erc20-unchecked-transfer)
+    //     _gameToken.transfer(msg.sender, token - burnAmount);
+    //     _gameToken.burn(address(this), burnAmount);
+    // }
 
     function battle(uint256 enemySlot) external onlyRegistered {
         bytes32 seed = Randao.getSeed();
         uint256[3] memory equippedIds = _heroLogic.getEquippedIds(msg.sender);
-        (Equipment memory e0, Equipment memory e1, Equipment memory e2) = _getEquipped(equippedIds);
+        (Equipment memory sword, Equipment memory armor, Equipment memory shield) = _getEquipped(equippedIds);
 
         AbilitiesExtra memory ae = AbilitiesExtra({
-            attack: e0.attack,
-            defense: e1.defense + e2.defense,
-            crit: e0.crit,
-            critChance: e0.critChance,
-            stunChance: e0.stunChance + e2.stunChance,
-            blockChance: e2.blockChance,
-            weaponMaterialsIdx: uint8(e0.materials),
-            armorEquipped: e1.level == 0,
-            armorMaterialsIdx: uint8(e1.materials)
+            attack: sword.attack,
+            defense: armor.defense + shield.defense,
+            crit: sword.crit,
+            critChance: sword.critChance,
+            stunChance: shield.stunChance,
+            blockChance: armor.blockChance,
+            weaponMaterialsIdx: uint8(sword.materials),
+            armorEquipped: armor.level == 0,
+            armorMaterialsIdx: uint8(armor.materials)
         });
 
         (bool playerWin, uint8 curFloorIndex, uint8 enemyLevel) = _heroLogic.combat(msg.sender, seed, enemySlot, ae);
@@ -127,8 +129,13 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         }
     }
 
-    function nextFloor() external onlyRegistered {
-        _heroLogic.nextFloor(msg.sender, Randao.getSeed());
+    function nextFloor(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external onlyRegistered {
+        uint256 cost = _heroLogic.nextFloor(msg.sender, Randao.getSeed());
+        if (cost == 0) return;
+
+        if (cost != amount) revert WrongPaymentAmount(cost, amount);
+
+        _deductTokens(amount, deadline, v, r, s);
     }
 
     /// @notice currently, only Book and Potion can be used
@@ -148,14 +155,17 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         }
     }
 
-    function fullHeal() external onlyRegistered {
+    function fullHeal(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external onlyRegistered {
         Player memory player = _heroLogic.getPlayer(msg.sender);
         uint16 healthMax = player.healthMax;
         if (player.health >= healthMax) revert AlreadyFullHealth();
-        uint256 cost = _healToFullCost(player.level);
-        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
-        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
+
+        Floor memory floor = _heroLogic.getFloor(msg.sender);
+        uint256 cost = _healCost(healthMax - player.health, floor.index);
+        if (cost != amount) revert WrongPaymentAmount(cost, amount);
+
         _heroLogic.setPlayerHealth(msg.sender, healthMax);
+        _deductTokens(amount, deadline, v, r, s);
     }
 
     function equip(uint256 equipmentId) external onlyRegistered {
@@ -175,10 +185,6 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         external
         onlyRegistered
     {
-        _gameToken.permit(msg.sender, address(this), amount, deadline, v, r, s);
-        _gameToken.burnFromApprove(msg.sender, amount);
-        // _protocol.syncFloorPriceAfterBurn();
-
         if (typeIndex > 1) revert InvalidTypeIndex(typeIndex);
         Floor memory floor = _heroLogic.getFloor(msg.sender);
         uint256 cost;
@@ -196,42 +202,84 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
             (cost, assetId) = _inventoryLogic.buyFromShopEquipment(msg.sender, eq);
         }
 
-        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
+        _deductTokens(amount, deadline, v, r, s);
+        if (cost != amount) revert WrongPaymentAmount(cost, amount);
+
         _heroLogic.removeShopSlot(msg.sender, typeIndex, slot);
-        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
         _gameAssets.mint(msg.sender, assetId, 1, "");
     }
 
-    function upgrade(uint256 equipmentId) external onlyRegistered {
+    function upgrade(uint256 equipmentId, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        onlyRegistered
+    {
         uint256 cost = _inventoryLogic.upgrade(msg.sender, equipmentId, Randao.getSeed());
-        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
-        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
+        if (amount != cost) revert WrongPaymentAmount(cost, amount);
+        _deductTokens(amount, deadline, v, r, s);
     }
 
-    function mergeSword(uint256 mainEquipmentId, uint256 subEquipmentId) external onlyRegistered {
-        _mergeEquipment(0, mainEquipmentId, subEquipmentId);
+    function mergeSword(
+        uint256 mainEquipmentId,
+        uint256 subEquipmentId,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external onlyRegistered {
+        _mergeEquipment(0, mainEquipmentId, subEquipmentId, amount, deadline, v, r, s);
     }
 
-    function mergeArmor(uint256 mainEquipmentId, uint256 subEquipmentId) external onlyRegistered {
-        _mergeEquipment(1, mainEquipmentId, subEquipmentId);
+    function mergeArmor(
+        uint256 mainEquipmentId,
+        uint256 subEquipmentId,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external onlyRegistered {
+        _mergeEquipment(1, mainEquipmentId, subEquipmentId, amount, deadline, v, r, s);
     }
 
-    function mergeShield(uint256 mainEquipmentId, uint256 subEquipmentId) external onlyRegistered {
-        _mergeEquipment(2, mainEquipmentId, subEquipmentId);
+    function mergeShield(
+        uint256 mainEquipmentId,
+        uint256 subEquipmentId,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external onlyRegistered {
+        _mergeEquipment(2, mainEquipmentId, subEquipmentId, amount, deadline, v, r, s);
     }
 
-    function _mergeEquipment(uint256 slot, uint256 mainEquipmentId, uint256 subEquipmentId) private {
+    function _mergeEquipment(
+        uint256 slot,
+        uint256 mainEquipmentId,
+        uint256 subEquipmentId,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) private {
         uint256[3] memory ids = _heroLogic.getEquippedIds(msg.sender);
         if (ids[slot] != mainEquipmentId) revert InvalidEquipmentId(mainEquipmentId);
         uint256 cost = _inventoryLogic.mergeEquipment(msg.sender, mainEquipmentId, subEquipmentId, Randao.getSeed());
-        if (_gameAssets.balanceOf(msg.sender, Property.COIN_ID) < cost) revert InsufficientCoin();
+
+        if (amount != cost) revert WrongPaymentAmount(cost, amount);
+        _deductTokens(amount, deadline, v, r, s);
+
         _gameAssets.burn(msg.sender, subEquipmentId, 1);
-        _gameAssets.burn(msg.sender, Property.COIN_ID, cost);
     }
 
-    function circle() external onlyRegistered {
+    function circle(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external onlyRegistered {
         bytes32 seed = Randao.getSeed().change(6, SEED_MIX_CIRCLE);
-        _heroLogic.circle(msg.sender, seed);
+        uint256 cost = _heroLogic.circle(msg.sender, seed);
+        if (cost == 0) return;
+        if (cost != amount) revert WrongPaymentAmount(cost, amount);
+        _deductTokens(amount, deadline, v, r, s);
     }
 
     function getFloor(address addr) external view returns (Floor memory) {
@@ -288,8 +336,11 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         if (ids[2] > 0) e2 = _inventoryLogic.getEquipment(ids[2]);
     }
 
-    function _healToFullCost(uint8 level) internal pure returns (uint256) {
-        return (5 + uint256(level) * 2) * 1 ether;
+    function _healCost(uint256 healAmount, uint256 floorIndex) internal pure returns (uint256) {
+        // F1: each 1 HP healed ≈ 0.0025 token
+        // F50: each 1 HP healed ≈ 0.125 token
+        // F100: each 1 HP healed ≈ 0.25 token
+        return Math.mulDiv(healAmount, floorIndex * 1 ether, 400, Math.Rounding.Ceil);
     }
 
     function _newHandSword() private pure returns (Equipment memory) {
@@ -298,12 +349,13 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
             materials: EquipmentMaterials.Iron,
             rarity: Rarity.C,
             level: 1,
-            attack: 8,
+            attack: 7,
             defense: 0,
             crit: 0,
             critChance: 0,
             blockChance: 0,
-            stunChance: 0
+            stunChance: 0,
+            growth: 140
         });
     }
 
@@ -325,6 +377,12 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
     function _spendToken(address account, uint256 amount) private {
         _gameToken.burnFromApprove(account, amount);
         _protocol.syncFloorPriceAfterBurn();
+    }
+
+    function _deductTokens(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) private {
+        _gameToken.permit(msg.sender, address(this), amount, deadline, v, r, s);
+        _gameToken.burnFromApprove(msg.sender, amount);
+        // _protocol.syncFloorPriceAfterBurn();
     }
 
     function _onlyRegistered() private view {

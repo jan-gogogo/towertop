@@ -86,7 +86,7 @@ library Battle {
             );
 
             if (rv.stunChance > 0) {
-                if (uint8(roll3[i]) < (rv.stunChance * 256) / 100) stunned = true;
+                if (uint256(uint8(roll3[i])) * 100 < rv.stunChance * 255) stunned = true;
             }
 
             if (parity == 0) {
@@ -100,13 +100,6 @@ library Battle {
 
         pHealthFinal = pHealth;
         aHealthFinal = aHealth;
-    }
-
-    function rewardCoins(uint256 floorIndex) internal pure returns (uint256 coinCount) {
-        unchecked {
-            coinCount = floorIndex.isBossFloor() ? (floorIndex + 1) + 5 : floorIndex / 5 + 1;
-            coinCount *= 1 ether;
-        }
     }
 
     function rewardItems(bytes32 seed, uint256 floorIndex) internal pure returns (uint256[] memory assetIds) {
@@ -168,9 +161,11 @@ library Battle {
         returns (uint8 level, Rarity rarity, EquipmentMaterials materials, EquipmentType typ)
     {
         level = Property.calEquipmentLevel(floorIndex);
-        rarity = Property.calRarity(uint8(seed[1]), floorIndex);
-        materials = Property.calEquipmentMaterials(uint8(seed[2]));
-        typ = EquipmentType(uint8(seed[3]) % 3);
+        rarity = FloorIndex.isBossFloor(floorIndex)
+            ? Property.calRarityForDefeatedBoss(uint8(seed[2]), floorIndex)
+            : Property.calRarity(uint8(seed[2]), floorIndex);
+        materials = Property.calEquipmentMaterials(uint8(seed[3]));
+        typ = EquipmentType(uint8(seed[4]) % 3);
     }
 
     function _calculateDamage(
@@ -185,6 +180,7 @@ library Battle {
     ) internal pure returns (uint256) {
         uint256 damage = 1;
 
+        // discarded
         // if (attack > defense) {
         //     damage = attack - defense;
         // }

@@ -84,7 +84,7 @@ contract DeployGame is Script {
         IHeroLogic(heroProxy).setPermit(gameProxy);
         IInventoryLogic(inventoryProxy).setPermit(gameProxy);
 
-        _token.authorize(gameProxy, gameProxy);
+        _token.authorize(protocol, gameProxy);
         _assets.authorize(gameProxy);
 
         _protocol.setGameProxy(gameProxy);

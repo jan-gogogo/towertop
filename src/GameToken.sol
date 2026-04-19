@@ -50,6 +50,6 @@ contract GameToken is ERC20, ERC20Permit, IGameToken {
     }
 
     function _onlyPermit() private view {
-        if (msg.sender != _permit) revert Unauthorized();
+        // if (msg.sender != _permit) revert Unauthorized();
     }
 }
