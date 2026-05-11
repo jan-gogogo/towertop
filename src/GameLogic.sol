@@ -123,24 +123,21 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
             // Request Chainlink VRF random words for generating battle reward loot
             // _requestRandomWordsForReward(msg.sender, curFloorIndex);
 
+            // ============================template============================
             (uint256[] memory assetIds, uint256[] memory values) =
                 _inventoryLogic.rewardWinner(msg.sender, seed, curFloorIndex);
 
             if (assetIds.length > 0 && values.length > 0) {
                 _gameAssets.mintBatch(msg.sender, assetIds, values, "");
             }
+            // ================================================================
 
             _heroLogic.playerLevelUp(msg.sender, Battle.calRewardExperience(enemyLevel, curFloorIndex));
         }
     }
 
-    function nextFloor(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external onlyRegistered {
-        uint256 cost = _heroLogic.nextFloor(msg.sender, Randao.getSeed());
-        if (cost == 0) return;
-
-        if (cost != amount) revert WrongPaymentAmount(cost, amount);
-
-        _deductTokens(amount, deadline, v, r, s);
+    function nextFloor() external onlyRegistered {
+        _heroLogic.nextFloor(msg.sender, Randao.getSeed());
     }
 
     /// @notice currently, only Book and Potion can be used

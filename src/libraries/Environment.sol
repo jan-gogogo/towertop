@@ -132,11 +132,11 @@ library Environment {
         }
     }
 
-    function calEntryCost(uint256 entryFloor) internal pure returns (uint256) {
-        if (entryFloor < 21) return 0;
+    // function calEntryCost(uint256 entryFloor) internal pure returns (uint256) {
+    //     if (entryFloor < 21) return 0;
 
-        return (entryFloor - 20) * 15e17; //1.5 ether
-    }
+    //     return (entryFloor - 20) * 15e17; //1.5 ether
+    // }
 
     function clearFloor(Floor storage floor) internal {
         // according to EIP-2200, clearing the entire floor can provide some gas refunds

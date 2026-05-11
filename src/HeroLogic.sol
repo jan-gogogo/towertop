@@ -100,7 +100,7 @@ abstract contract HeroLogic is IHeroLogic {
         _constructFloorData(floor, floor.index, seed);
     }
 
-    function nextFloor(address addr, bytes32 seed) external onlyPermit returns (uint256 cost) {
+    function nextFloor(address addr, bytes32 seed) external onlyPermit {
         Floor storage floor = _floor[addr];
         uint8 curIndex = floor.index;
         if (curIndex >= 99) revert ReachedTheTopFloor();
@@ -112,9 +112,6 @@ abstract contract HeroLogic is IHeroLogic {
         Environment.clearFloor(floor);
         uint8 entryFloor = curIndex + 1;
         floor.index = entryFloor;
-
-        cost = Environment.calEntryCost(uint256(entryFloor));
-
         _constructFloorData(floor, uint256(entryFloor), seed);
     }
 

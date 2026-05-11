@@ -75,7 +75,7 @@ interface IGameLogic {
     /**
      * @notice advance to next floor after all enemies on current floor are defeated
      */
-    function nextFloor(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
+    function nextFloor() external;
 
     /**
      * @notice use items at the given bag slots (book or potion only); slots must be ascending and unique, length 1–5
@@ -159,6 +159,11 @@ interface IGameLogic {
         bytes32 s
     ) external;
 
+    /**
+     * @notice dismantle an equipment: burn the token and mint refining stones (amount from attack/defense and rarity)
+     * @dev if the piece is equipped it is unequipped first; otherwise it is removed from the warehouse
+     * @param equipmentId equipment token id (must exist and belong to caller)
+     */
     function dismantle(uint256 equipmentId) external;
 
     /**
