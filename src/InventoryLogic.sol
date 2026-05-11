@@ -125,13 +125,18 @@ abstract contract InventoryLogic is IInventoryLogic {
         assetId = _addEquipmentInternal(addr, equipment);
     }
 
-    function upgrade(address, uint256 equipmentId, bytes32 seed) external onlyPermit returns (uint256 cost) {
+    function upgrade(address, uint256 equipmentId, bytes32 seed)
+        external
+        onlyPermit
+        returns (uint256 cost, uint256 ingredients)
+    {
         if (equipmentId == 0) revert InvalidEquipmentId(equipmentId);
         Equipment storage e = _equipments[equipmentId];
         if (equipmentId > EQUIPMENT_ID_CAP) revert InvalidEquipmentId(equipmentId);
         uint8 curLevel = e.level;
         if (curLevel >= Property.MAX_EQUIPMENT_LEVEL) revert ReachedMaxLevel();
         cost = Property.upgradeEquipmentCost(e.rarity, curLevel);
+        ingredients = Property.upgradeEquipmentIngredients(e.rarity, e.attack, e.defense);
         bytes32 upgradeSeed = seed.change(7, SEED_MIX_UPGRADE);
         if (Property.determineUpgrade(uint8(upgradeSeed[0]), e.rarity, curLevel)) {
             _upgradeEquipment(equipmentId);
@@ -198,8 +203,8 @@ abstract contract InventoryLogic is IInventoryLogic {
         return _equipments[id];
     }
 
-    function isValidEquipment(uint256 id) external pure returns (bool) {
-        return id >= EQUIPMENT_ID_START && id < EQUIPMENT_ID_CAP;
+    function isValidEquipment(uint256 id) external view returns (bool) {
+        return _equipments[id].level > 0;
     }
 
     /// @notice Initialize next-IDs (for proxy: call from implementation's initialize(); constructor only runs on impl, not on proxy).

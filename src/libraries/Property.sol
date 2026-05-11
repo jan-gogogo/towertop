@@ -271,6 +271,14 @@ library Property {
         return uint16(difficulty);
     }
 
+    function getRefiningStoneFromDismantle(uint16 attack, uint16 defense, Rarity rarity)
+        internal
+        pure
+        returns (uint256)
+    {
+        return (attack > 0 ? attack : defense) * (uint256(rarity) + 1);
+    }
+
     function calEquipmentMaterials(uint8 random) internal pure returns (EquipmentMaterials) {
         unchecked {
             return EquipmentMaterials(uint8(random % 3));
@@ -361,6 +369,12 @@ library Property {
         }
 
         return Math.mulDiv(uint256(curLevel), mul * 1 ether, 10, Math.Rounding.Ceil);
+    }
+
+    function upgradeEquipmentIngredients(Rarity rarity, uint16 attack, uint16 defense) internal pure returns (uint256) {
+        uint16 mainAttribute = attack > 0 ? attack : defense;
+
+        return mainAttribute * 13 * (uint256(rarity) + 1) / 10;
     }
 
     function determineUpgrade(uint8 random, Rarity rarity, uint8 curLevel) internal pure returns (bool) {

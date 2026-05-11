@@ -15,7 +15,7 @@ import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Player, AbilitiesExtra, Character, RewardWinner} from "./libraries/Character.sol";
 import {VRFV2PlusClient} from "@chainlink/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-import {Equipment, EquipmentType, EquipmentMaterials} from "./libraries/Property.sol";
+import {Property, Equipment, EquipmentType, EquipmentMaterials} from "./libraries/Property.sol";
 import {IVRFCoordinatorV2Plus} from "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
 import {VRFConsumerBaseV2Upgradeable} from "@chainlink/src/v0.8/vrf/dev/VRFConsumerBaseV2Upgradeable.sol";
 
@@ -52,6 +52,11 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
 
     modifier onlyRegistered() {
         _onlyRegistered();
+        _;
+    }
+
+    modifier onlyOwnerAndValid(uint256 equipmentId) {
+        _onlyOwnerAndValid(equipmentId);
         _;
     }
 
@@ -168,15 +173,13 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         _deductTokens(amount, deadline, v, r, s);
     }
 
-    function equip(uint256 equipmentId) external onlyRegistered {
-        if (!_inventoryLogic.isValidEquipment(equipmentId)) revert InvalidEquipmentId(equipmentId);
+    function equip(uint256 equipmentId) external onlyRegistered onlyOwnerAndValid(equipmentId) {
         _inventoryLogic.removeFromWarehouse(msg.sender, equipmentId);
         uint256 slot = equipmentId >= 4e9 ? 3 : uint256(_inventoryLogic.getEquipment(equipmentId).etype);
         _heroLogic.equip(msg.sender, equipmentId, slot);
     }
 
-    function unequip(uint256 equipmentId) external onlyRegistered {
-        if (!_inventoryLogic.isValidEquipment(equipmentId)) revert InvalidEquipmentId(equipmentId);
+    function unequip(uint256 equipmentId) external onlyRegistered onlyOwnerAndValid(equipmentId) {
         _heroLogic.unequip(msg.sender, equipmentId);
         _inventoryLogic.addToWarehouse(msg.sender, equipmentId);
     }
@@ -212,9 +215,16 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
     function upgrade(uint256 equipmentId, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
         external
         onlyRegistered
+        onlyOwnerAndValid(equipmentId)
     {
-        uint256 cost = _inventoryLogic.upgrade(msg.sender, equipmentId, Randao.getSeed());
+        (uint256 cost, uint256 ingredients) = _inventoryLogic.upgrade(msg.sender, equipmentId, Randao.getSeed());
+
+        if (_gameAssets.balanceOf(msg.sender, Property.REFINING_STONE_ID) < ingredients) {
+            revert InsufficientRefiningStones();
+        }
         if (amount != cost) revert WrongPaymentAmount(cost, amount);
+
+        _gameAssets.burn(msg.sender, Property.REFINING_STONE_ID, ingredients);
         _deductTokens(amount, deadline, v, r, s);
     }
 
@@ -226,7 +236,7 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external onlyRegistered {
+    ) external onlyRegistered onlyOwnerAndValid(mainEquipmentId) onlyOwnerAndValid(subEquipmentId) {
         _mergeEquipment(0, mainEquipmentId, subEquipmentId, amount, deadline, v, r, s);
     }
 
@@ -238,7 +248,7 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external onlyRegistered {
+    ) external onlyRegistered onlyOwnerAndValid(mainEquipmentId) onlyOwnerAndValid(subEquipmentId) {
         _mergeEquipment(1, mainEquipmentId, subEquipmentId, amount, deadline, v, r, s);
     }
 
@@ -250,8 +260,22 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external onlyRegistered {
+    ) external onlyRegistered onlyOwnerAndValid(mainEquipmentId) onlyOwnerAndValid(subEquipmentId) {
         _mergeEquipment(2, mainEquipmentId, subEquipmentId, amount, deadline, v, r, s);
+    }
+
+    function dismantle(uint256 equipmentId) external onlyRegistered onlyOwnerAndValid(equipmentId) {
+        Equipment memory e = _inventoryLogic.getEquipment(equipmentId);
+        uint256 stones = Property.getRefiningStoneFromDismantle(e.attack, e.defense, e.rarity);
+
+        if (_heroLogic.isEquiped(msg.sender, equipmentId)) {
+            _heroLogic.unequip(msg.sender, equipmentId);
+        } else {
+            _inventoryLogic.removeFromWarehouse(msg.sender, equipmentId);
+        }
+
+        _gameAssets.burn(msg.sender, equipmentId, 1);
+        _gameAssets.mint(msg.sender, Property.REFINING_STONE_ID, stones, "");
     }
 
     function _mergeEquipment(
@@ -382,7 +406,16 @@ abstract contract GameLogic is VRFConsumerBaseV2Upgradeable, IGameLogic {
     function _deductTokens(uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) private {
         _gameToken.permit(msg.sender, address(this), amount, deadline, v, r, s);
         _gameToken.burnFromApprove(msg.sender, amount);
-        // _protocol.syncFloorPriceAfterBurn();
+        _protocol.syncFloorPriceAfterBurn();
+    }
+
+    function _onlyOwnerAndValid(uint256 equipmentId) private view {
+        if (_gameAssets.balanceOf(msg.sender, equipmentId) == 0) {
+            revert NotYourAsset(equipmentId);
+        }
+        if (!_inventoryLogic.isValidEquipment(equipmentId)) {
+            revert InvalidEquipment(equipmentId);
+        }
     }
 
     function _onlyRegistered() private view {

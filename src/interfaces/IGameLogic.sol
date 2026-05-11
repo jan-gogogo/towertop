@@ -13,12 +13,13 @@ interface IGameLogic {
     error PlayerAlreadyExists();
     error AmountAtLeast1e18();
     error AmountAtLeast1e9();
-    error InsufficientCoin();
+    error InsufficientRefiningStones();
     error InsufficientERC20();
     error EnemyNotFound(uint256 slot);
     error PlayerNotFound(address addr);
     error EquipmentNotFound(uint256 id);
     error ItemNotFound(uint256 slot);
+    error InvalidEquipment(uint256 equipmentId);
     error InvalidEquipmentId(uint256 equipmentId);
     error ReachedTheTopFloor();
     error ReachedMaxLevel();
@@ -35,6 +36,7 @@ interface IGameLogic {
     error CannotMerge();
     error SameEquipmentIds();
     error WrongPaymentAmount(uint256 need, uint256 received);
+    error NotYourAsset(uint256 id);
 
     /**
      * @notice create a player (register and give initial assets)
@@ -156,6 +158,8 @@ interface IGameLogic {
         bytes32 r,
         bytes32 s
     ) external;
+
+    function dismantle(uint256 equipmentId) external;
 
     /**
      * @notice Rebirth at the top floor (100th): reset level/stats to initial,

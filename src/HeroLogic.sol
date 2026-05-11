@@ -144,6 +144,17 @@ abstract contract HeroLogic is IHeroLogic {
         }
     }
 
+    function isEquiped(address addr, uint256 equipmentId) external view returns (bool) {
+        uint256[3] storage equipedArr = _equipped[addr];
+        uint256 len = equipedArr.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (equipedArr[i] == equipmentId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function getPlayer(address addr) external view returns (Player memory) {
         return _players[addr];
     }

@@ -33,7 +33,9 @@ interface IInventoryLogic {
     function buyFromShopEquipment(address addr, Equipment calldata equipment)
         external
         returns (uint256 cost, uint256 assetId);
-    function upgrade(address addr, uint256 equipmentId, bytes32 seed) external returns (uint256 cost);
+    function upgrade(address addr, uint256 equipmentId, bytes32 seed)
+        external
+        returns (uint256 cost, uint256 ingredients);
     function mergeEquipment(address addr, uint256 mainId, uint256 subId, bytes32 seed) external returns (uint256 cost);
 
     function rewardWinner(address winner, bytes32 seed, uint256 floorIndex)
@@ -43,5 +45,5 @@ interface IInventoryLogic {
     function getBag(address addr) external view returns (uint256[] memory itemIds);
     function getWarehouse(address addr) external view returns (uint256[] memory equipmentIds);
     function getEquipment(uint256 id) external view returns (Equipment memory);
-    function isValidEquipment(uint256 id) external pure returns (bool);
+    function isValidEquipment(uint256 id) external view returns (bool);
 }
