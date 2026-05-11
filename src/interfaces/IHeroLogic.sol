@@ -36,14 +36,15 @@ interface IHeroLogic {
     function equip(address addr, uint256 equipmentId, uint256 slot) external;
     function unequip(address addr, uint256 equipmentId) external;
     function initFloor(address addr, bytes32 seed) external;
-    function nextFloor(address addr, bytes32 seed) external;
-    function circle(address addr, bytes32 seed) external;
+    function nextFloor(address addr, bytes32 seed) external returns (uint256 cost);
+    function circle(address addr, bytes32 seed) external returns (uint256 cost);
     function removeShopSlot(address addr, uint256 typeIndex, uint256 slot) external;
 
     function setFloorIndex(address addr, uint8 index) external;
 
+    function isEquiped(address addr, uint256 equipmentId) external view returns (bool);
     function getPlayer(address addr) external view returns (Player memory);
     function getFloor(address addr) external view returns (Floor memory);
     function getEnemies(address addr) external view returns (Aoka[] memory);
-    function getEquippedIds(address addr) external view returns (uint256[4] memory);
+    function getEquippedIds(address addr) external view returns (uint256[3] memory);
 }

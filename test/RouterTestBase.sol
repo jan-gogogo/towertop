@@ -8,8 +8,12 @@ import {IHeroLogic} from "../src/interfaces/IHeroLogic.sol";
 import {IInventoryLogic} from "../src/interfaces/IInventoryLogic.sol";
 import {IGameToken} from "../src/interfaces/IGameToken.sol";
 import {IGameAssets} from "../src/interfaces/IGameAssets.sol";
+import {IProtocol} from "../src/interfaces/IProtocol.sol";
+import {IFeePool} from "../src/interfaces/IFeePool.sol";
 import {GameToken} from "../src/GameToken.sol";
 import {GameAssets} from "../src/GameAssets.sol";
+import {Protocol} from "../src/Protocol.sol";
+import {FeePool} from "../src/FeePool.sol";
 import {GameV1} from "../src/GameV1.sol";
 import {HeroV1} from "../src/HeroV1.sol";
 import {InventoryV1} from "../src/InventoryV1.sol";
@@ -26,8 +30,13 @@ abstract contract RouterTestBase is Test {
     IInventoryLogic public inventoryLogic;
     IGameToken public gameToken;
     IGameAssets public gameAssets;
+    IProtocol public protocol;
+    IFeePool public feePool;
     VRFCoordinatorV2_5Mock public vrfCoordinatorMock;
     uint256 public vrfSubId;
+
+    uint256 constant SLOPE = 0.000000005 ether; // 5e-9
+    uint256 constant INIT_PRICE = 0.1 ether; // value is 0.01 USDT
 
     /// @notice Deploy full stack with VRF Mock; call from setUp(). Uses msg.sender as owner (e.g. address(this) in tests).
     function deployRouterStack() internal {
@@ -42,6 +51,8 @@ abstract contract RouterTestBase is Test {
 
         GameToken token = new GameToken("Aoka Tower Token", "ATT");
         GameAssets assets = new GameAssets("");
+        FeePool feePoolImpl = new FeePool(owner);
+        Protocol protocolImpl = new Protocol(address(token), address(feePoolImpl), SLOPE, INIT_PRICE);
 
         GameV1 gameImpl = new GameV1();
         HeroV1 heroImpl = new HeroV1();
@@ -63,6 +74,7 @@ abstract contract RouterTestBase is Test {
                 address(inventoryProxy),
                 address(token),
                 address(assets),
+                address(protocolImpl),
                 address(vrfCoordinatorMock),
                 bytes32(0),
                 vrfSubId
@@ -77,8 +89,11 @@ abstract contract RouterTestBase is Test {
         heroLogic.setPermit(address(gameProxy));
         inventoryLogic.setPermit(address(gameProxy));
 
-        token.setProxy(address(gameProxy));
-        assets.setProxy(address(gameProxy));
+        token.authorize(address(gameProxy), address(gameProxy));
+        assets.authorize(address(gameProxy));
+
+        protocol = IProtocol(address(protocolImpl));
+        protocol.setGameProxy(address(gameProxy));
 
         gameToken = IGameToken(address(token));
         gameAssets = IGameAssets(address(assets));

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Rarity} from "./Attribute.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 enum ItemType {
     Empty,
@@ -27,9 +28,9 @@ enum EquipmentType {
 =================================================================================*/
 
 //  Unified equipment:
-//  Sword uses attack/crit/critChance/stunChance;
-//  Armor uses defense;
-//  Shield uses defense/blockChance/stunChance.
+//  Sword uses attack/crit/critChance;
+//  Armor uses defense/blockChance;
+//  Shield uses defense/stunChance.
 //  Unused fields are 0.
 struct Equipment {
     EquipmentType etype;
@@ -39,14 +40,10 @@ struct Equipment {
     uint16 attack;
     uint16 defense;
     uint16 crit; // 0 - 5
-    uint16 critChance; // 0-100
+    uint16 critChance; // 0-100, 15 means 15%
     uint16 blockChance; // 0-100
     uint16 stunChance; // 0-100
-}
-
-struct Puppet {
-    Rarity rarity;
-    uint40 lastClaimAt;
+    uint16 growth; // 100-400, it means grouth * (attack or defense) / 100 when level up
 }
 
 library Property {
@@ -54,6 +51,9 @@ library Property {
     error WrongBookId();
     error WrongItemId();
     error WrongEquipmentId();
+    error WrongRarity();
+    error WrongGrowth();
+    error CannotCalEquipmentCost();
 
     uint256 constant MAX_EQUIPMENT_LEVEL = 25;
 
@@ -69,7 +69,7 @@ library Property {
 
     uint256 constant REFERSH_STONE_ID = 201;
 
-    uint256 constant COIN_ID = 301;
+    uint256 constant REFINING_STONE_ID = 301;
 
     function asSingletonArrays(uint256 element1) internal pure returns (uint256[] memory array1) {
         assembly ("memory-safe") {
@@ -91,38 +91,37 @@ library Property {
         return uint256(rarity) + 101;
     }
 
-    function calSecondAttributesDirectly(Rarity rarity)
+    function calSecondAttributeForSword(Rarity rarity, uint16 growth)
         internal
         pure
-        returns (uint16 crit, uint16 critChance, uint16 blockChance, uint16 stunChance)
+        returns (uint16 crit, uint16 critChance)
     {
         if (rarity == Rarity.C) {
-            return (0, 0, 0, 0);
+            return (0, 0);
         }
 
-        // if not through foundry, degrade(rarity - 1) the second attributes
-        unchecked {
-            (crit, critChance, blockChance, stunChance) = calSecondAttributes(Rarity(uint8(rarity) - 1));
-        }
-    }
-
-    function calSecondAttributes(Rarity rarity)
-        internal
-        pure
-        returns (uint16 crit, uint16 critChance, uint16 blockChance, uint16 stunChance)
-    {
-        if (rarity == Rarity.C) {
-            return (0, 0, 0, 0);
-        }
-
-        // here rarity is 1 to 3 (B/A/S)
+        //  rarity is 1 to 3 (B/A/S)
         uint8 mul = uint8(rarity);
         crit = mul;
-        unchecked {
-            critChance = 7 * mul;
-            blockChance = 7 * mul;
-            stunChance = 5 * mul;
+        critChance = calSecondAttributesWithGrowth(5, growth, mul);
+    }
+
+    function calSecondAttributeForShield(Rarity rarity, uint16 growth) internal pure returns (uint16 stunChance) {
+        if (rarity == Rarity.C) {
+            return 0;
         }
+
+        //  rarity is 1 to 3 (B/A/S)
+        stunChance = calSecondAttributesWithGrowth(3, growth, uint8(rarity));
+    }
+
+    function calSecondAttributeForArmor(Rarity rarity, uint16 growth) internal pure returns (uint16 blockChance) {
+        if (rarity == Rarity.C) {
+            return 0;
+        }
+
+        //  rarity is 1 to 3 (B/A/S)
+        blockChance = calSecondAttributesWithGrowth(5, growth, uint8(rarity));
     }
 
     function calBookValue(uint256 itemId) internal pure returns (uint32) {
@@ -136,9 +135,9 @@ library Property {
     }
 
     function calBookValue(Rarity rarity) internal pure returns (uint32) {
-        // C=10, B=20, A=40, S=80  ->  10 * 2^rarity
+        // C=40, B=80, A=160, S=320  ->  40 * 2^rarity
         unchecked {
-            return uint32(10 * (2 ** uint256(rarity)));
+            return uint32(40 * (2 ** uint256(rarity)));
         }
     }
 
@@ -146,72 +145,58 @@ library Property {
         if (itemId < 101 || itemId > 104) {
             revert WrongPotionId();
         }
-        unchecked {
-            Rarity rarity = Rarity(itemId - 101);
-            return calPotionValue(rarity);
-        }
+        Rarity rarity = Rarity(itemId - 101);
+        return calPotionValue(rarity);
     }
 
     function calPotionValue(Rarity rarity) internal pure returns (uint16) {
-        // C=15，B=30，A=60，S=120 -> 15 * 2^rarity
-        unchecked {
-            return uint16(15 * (2 ** uint256(rarity)));
-        }
+        // C=50，B=100，A=200
+        // S=1000
+        return rarity == Rarity.S ? 1000 : uint16(50 * (2 ** uint256(rarity)));
     }
 
-    function pushEquipmentSword(Equipment[] storage arr, EquipmentMaterials materials, Rarity rarity, uint8 level)
-        internal
-    {
-        (uint16 crit, uint16 critChance,, uint16 stunChance) = calSecondAttributesDirectly(rarity);
+    function pushEquipment(
+        Equipment[] storage arr,
+        EquipmentType typ,
+        EquipmentMaterials materials,
+        Rarity rarity,
+        uint8 level,
+        uint8 random1,
+        uint8 random2
+    ) internal {
+        // High growth equipment will not in shops
+        uint16 growth = getGrowthForShop(random1, random2);
+        uint16 crit = 0;
+        uint16 critChance = 0;
+        uint16 blockChance = 0;
+        uint16 stunChance = 0;
+
+        uint16 mainValue = calMainAttribute(typ, growth, level);
+        uint16 attack = 0;
+        uint16 defense = 0;
+        if (EquipmentType.Sword == typ) {
+            attack = mainValue;
+            (crit, critChance) = Property.calSecondAttributeForSword(rarity, growth);
+        } else if (EquipmentType.Shield == typ) {
+            defense = mainValue;
+            stunChance = Property.calSecondAttributeForShield(rarity, growth);
+        } else if (EquipmentType.Armor == typ) {
+            defense = mainValue;
+            blockChance = Property.calSecondAttributeForArmor(rarity, growth);
+        }
         arr.push(
             Equipment({
-                etype: EquipmentType.Sword,
+                etype: typ,
                 materials: materials,
                 rarity: rarity,
                 level: level,
-                attack: calAttackForSword(rarity, level),
-                defense: 0,
+                attack: attack,
+                defense: defense,
                 crit: crit,
                 critChance: critChance,
-                blockChance: 0,
-                stunChance: stunChance
-            })
-        );
-    }
-
-    function pushEquipmentArmor(Equipment[] storage arr, EquipmentMaterials materials, Rarity rarity, uint8 level)
-        internal
-    {
-        arr.push(
-            Equipment({
-                etype: EquipmentType.Armor,
-                materials: materials,
-                rarity: rarity,
-                level: level,
-                attack: 0,
-                defense: calDefenseForArmor(rarity, level),
-                crit: 0,
-                critChance: 0,
-                blockChance: 0,
-                stunChance: 0
-            })
-        );
-    }
-
-    function pushEquipmentShield(Equipment[] storage arr, Rarity rarity, uint8 level) internal {
-        (,, uint16 blockChance, uint16 stunChance) = calSecondAttributesDirectly(rarity);
-        arr.push(
-            Equipment({
-                etype: EquipmentType.Shield,
-                materials: EquipmentMaterials.Wooden,
-                rarity: rarity,
-                level: level,
-                attack: 0,
-                defense: calDefenseForShield(rarity, level),
-                crit: 0,
-                critChance: 0,
                 blockChance: blockChance,
-                stunChance: stunChance
+                stunChance: stunChance,
+                growth: growth
             })
         );
     }
@@ -231,13 +216,67 @@ library Property {
     }
 
     function calRarity(uint8 random, uint256 floorIndex) internal pure returns (Rarity) {
-        if (floorIndex < 20) return Rarity.C;
-        unchecked {
-            uint256 mod = floorIndex >= 80 ? 3 : 2;
-            // casting to 'uint8' is safe because mod is at most 3
-            // forge-lint: disable-next-line(unsafe-typecast)
-            return Rarity(uint8(uint256(random) % mod));
+        if (floorIndex < 51) return Rarity.C; // only C
+        return Rarity(uint8(uint256(random) % 2)); // C or B
+    }
+
+    function calRarityForDefeatedBoss(uint8 random, uint256 floorIndex) internal pure returns (Rarity) {
+        if (floorIndex < 31) return Rarity.C; // only C
+        if (floorIndex < 61) return Rarity(uint8(uint256(random) % 2)); // C or B
+        if (floorIndex < 91) return Rarity(uint8(uint256(random) % 2) + 1); // B or A
+        return Rarity.A;
+    }
+
+    /**
+     * @notice calculate growth value of equipments in shop
+     * ≈60% probability [100,199]
+     * ≈39% probability [200,299]
+     * ≈1% probability [300,400]
+     * @param random1 random for growth level
+     * @param random2 random for growth scope
+     */
+    function getGrowthForShop(uint8 random1, uint8 random2) internal pure returns (uint16) {
+        return getGrowthDifficulty(253, random1, random2);
+    }
+
+    /**
+     * @notice calculate growth value of equipments for victory
+     * ≈60% probability [100,199]
+     * ≈30% probability [200,299]
+     * ≈10% probability [300,400]
+     * @param random1 random for growth level
+     * @param random2 random for growth scope
+     */
+    function getGrowthForVictory(uint8 random1, uint8 random2) internal pure returns (uint16) {
+        return getGrowthDifficulty(230, random1, random2);
+    }
+
+    /**
+     * @notice map 0-255 to 100-400 based on weighted probabilities
+     */
+    function getGrowthDifficulty(uint8 midStep, uint8 random1, uint8 random2) private pure returns (uint16) {
+        uint256 difficulty = 0;
+        if (random1 <= 153) {
+            // [100,199]
+            difficulty = 100 + (uint256(random2) % 100);
+        } else if (random1 <= midStep) {
+            // [200,299]
+            difficulty = 200 + (uint256(random2) % 100);
+        } else {
+            // [300,400]
+            difficulty = 300 + (uint256(random2) * 101);
         }
+        // casting to 'uint16' is safe because difficulty is at most 400
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint16(difficulty);
+    }
+
+    function getRefiningStoneFromDismantle(uint16 attack, uint16 defense, Rarity rarity)
+        internal
+        pure
+        returns (uint256)
+    {
+        return (attack > 0 ? attack : defense) * (uint256(rarity) + 1);
     }
 
     function calEquipmentMaterials(uint8 random) internal pure returns (EquipmentMaterials) {
@@ -246,25 +285,20 @@ library Property {
         }
     }
 
-    function calAttackForSword(Rarity rarity, uint8 level) internal pure returns (uint16) {
-        unchecked {
-            uint8 rarityBonus = uint8(rarity) * 2;
-            return uint16(level + rarityBonus);
-        }
-    }
+    function calMainAttribute(EquipmentType typ, uint256 growth, uint256 level) internal pure returns (uint16) {
+        uint256 basis = 5; // 1 for Shield
 
-    function calDefenseForArmor(Rarity rarity, uint8 level) internal pure returns (uint16) {
-        unchecked {
-            uint8 rarityBonus = uint8(rarity) * 2;
-            return uint16(level + rarityBonus);
+        if (EquipmentType.Sword == typ) {
+            basis = 7;
+        } else if (EquipmentType.Armor == typ) {
+            basis = 7;
         }
-    }
 
-    function calDefenseForShield(Rarity rarity, uint8 level) internal pure returns (uint16) {
-        unchecked {
-            uint8 rarityBonus = uint8(rarity) * 2;
-            return uint16((level + 1) / 2 + rarityBonus);
-        }
+        uint256 attribute = Math.mulDiv(growth, level, 100, Math.Rounding.Floor);
+
+        // casting to 'uint16' is safe because attribute is at most 12
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint16(attribute + basis);
     }
 
     function typeFromItemId(uint256 id) internal pure returns (ItemType typ) {
@@ -283,65 +317,98 @@ library Property {
         }
     }
 
-    function equipmentCost(uint8 level, Rarity rarity) internal pure returns (uint256) {
-        unchecked {
-            return (3 * uint256(level) + 8 * uint256(rarity) + 2) * 1 ether;
+    function equipmentCost(uint16 growth, Rarity rarity) internal pure returns (uint256) {
+        if (!isValidRarity(rarity)) revert WrongRarity();
+        if (!isValidGroth(growth)) revert WrongGrowth();
+
+        uint256 cost = 0;
+        uint256 step = growth / 100;
+        cost = growth * step * 1 ether;
+
+        if (Rarity.B == rarity) {
+            cost += 300 ether;
+        } else if (Rarity.A == rarity) {
+            cost += 1800 ether;
+        } else if (Rarity.S == rarity) {
+            cost += 10000 ether;
         }
+
+        return cost;
     }
 
     function itemCost(uint256 itemId) internal pure returns (uint256) {
         if (!isValidBookOrPotion(itemId)) revert WrongItemId();
+        // book   25, 50, 100, 200
+        // potion 4, 8, 16, 150
+
+        if (POTION_S_ID == itemId) return 150;
 
         uint256 id = itemId;
-        uint256 add = 3;
-        uint256 mul = 5;
-        unchecked {
-            if (id > 100) {
-                // potion
-                add = 2;
-                mul = 4;
-                id -= 100;
-            }
-            id--;
-            return (mul * id + add) * 1 ether;
+        uint256 initVal = 4;
+        if (id > 100) {
+            // potion
+            id -= 100;
+        } else {
+            // book
+            initVal = 25;
         }
+        if (id > 0) id--;
+        return (initVal * 2 ** id) * 1 ether;
     }
 
-    function upgradeEquipmentCost(uint8 curLevel) internal pure returns (uint256) {
-        unchecked {
-            return (uint256(curLevel) * 2 + 3) * 1 ether;
+    function upgradeEquipmentCost(Rarity rarity, uint8 curLevel) internal pure returns (uint256) {
+        uint256 mul = 0;
+        if (Rarity.C == rarity) {
+            mul = 5;
+        } else if (Rarity.B == rarity) {
+            mul = 15;
+        } else if (Rarity.A == rarity) {
+            mul = 20;
+        } else {
+            mul = 30;
         }
+
+        return Math.mulDiv(uint256(curLevel), mul * 1 ether, 10, Math.Rounding.Ceil);
     }
 
-    function determineUpgrade(uint8 random, uint8 curLevel) internal pure returns (bool) {
-        // P_upgrade = max(40%, 95% - 2% * L)
-        // overflow not possible because curLevel <=25
-        unchecked {
-            uint8 p = 243 - 5 * curLevel;
-            if (p > 102) p = 102;
-            return random < p;
-        }
+    function upgradeEquipmentIngredients(Rarity rarity, uint16 attack, uint16 defense) internal pure returns (uint256) {
+        uint16 mainAttribute = attack > 0 ? attack : defense;
+
+        return mainAttribute * 13 * (uint256(rarity) + 1) / 10;
+    }
+
+    function determineUpgrade(uint8 random, Rarity rarity, uint8 curLevel) internal pure returns (bool) {
+        // C: [0,255) means rarity C(curLevel 1) has a ≈99.6% success rate, curLevel 24 has a ≈90% success rate
+        // B: [0,242) means rarity B(curLevel 1) has a ≈94.5% success rate, curLevel 24 has a ≈85% success rate
+        // A: [0,229) means rarity A(curLevel 1) has a ≈89.4% success rate, curLevel 24 has a ≈80% success rate
+        // S: [0,216) means rarity S(curLevel 1) has a ≈84.3% success rate, curLevel 24 has a ≈75% success rate
+        uint256 step = 13;
+
+        return random < 256 - (uint8(rarity) * step) - curLevel;
     }
 
     function determineMerge(uint8 random, Rarity rarity) internal pure returns (bool) {
-        unchecked {
-            uint8 p = 0;
-            if (Rarity.C == rarity) {
-                p = 157; // 60%
-            } else if (Rarity.B == rarity) {
-                p = 79; // 30%
-            } else {
-                p = 13; // 5%
-            }
-            return random < p;
+        uint8 step = 0;
+        if (Rarity.C == rarity) {
+            step = 180; // ≈70%
+        } else if (Rarity.B == rarity) {
+            step = 90; // ≈35%
+        } else {
+            step = 26; // ≈10%
         }
+        return random < step;
     }
 
-    function mergeEquipmentCost(uint8 curLevel, Rarity curRarity) internal pure returns (uint256) {
-        //cost_merge = 5 + 3 * mainLevel + 5 * rarity_oldIndex
-        // overflow not possible because curLevel <=25, curRarity <=3
-        unchecked {
-            return (uint256(curLevel) * 3 + uint256(curRarity) * 5 + 5) * 1 ether;
+    function mergeEquipmentCost(Rarity curRarity) internal pure returns (uint256) {
+        if (Rarity.C == curRarity) {
+            // C -> B
+            return 200 ether;
+        } else if (Rarity.B == curRarity) {
+            // B -> A
+            return 600 ether;
+        } else {
+            // A -> S
+            return 1000 ether;
         }
     }
 
@@ -349,5 +416,21 @@ library Property {
         if (itemId > 0 && itemId < 5) return true;
         if (itemId > 100 && itemId < 105) return true;
         return false;
+    }
+
+    function isValidRarity(Rarity rarity) private pure returns (bool) {
+        return uint8(rarity) < 4;
+    }
+
+    function isValidGroth(uint16 growth) private pure returns (bool) {
+        return growth >= 100 || growth <= 400;
+    }
+
+    function calSecondAttributesWithGrowth(uint256 basis, uint256 growth, uint256 mul) private pure returns (uint16) {
+        unchecked {
+            // casting to 'uint16' is safe because growth is at most 400, basis is at most 5, mul is at most 3
+            // forge-lint: disable-next-line(unsafe-typecast)
+            return uint16(Math.mulDiv(basis, growth, 100, Math.Rounding.Floor) * mul);
+        }
     }
 }

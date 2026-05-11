@@ -5,6 +5,7 @@ import {IHeroLogic} from "./interfaces/IHeroLogic.sol";
 import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
 import {IGameToken} from "./interfaces/IGameToken.sol";
 import {IGameAssets} from "./interfaces/IGameAssets.sol";
+import {IProtocol} from "./interfaces/IProtocol.sol";
 import {IVRFCoordinatorV2Plus} from "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
 
 /**
@@ -46,6 +47,7 @@ contract GameV1 is GameLogic {
         address _inventoryLogic_,
         address _gameToken_,
         address _gameAssets_,
+        address _protocol_,
         address _vrfCoordinator_,
         bytes32 _keyHash_,
         uint256 _subscription_
@@ -54,6 +56,7 @@ contract GameV1 is GameLogic {
         _inventoryLogic = IInventoryLogic(_inventoryLogic_);
         _gameToken = IGameToken(_gameToken_);
         _gameAssets = IGameAssets(_gameAssets_);
+        _protocol = IProtocol(_protocol_);
 
         __VRFConsumerBaseV2_init(_vrfCoordinator_);
         _vrfCoordinator = IVRFCoordinatorV2Plus(_vrfCoordinator_);

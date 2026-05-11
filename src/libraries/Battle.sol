@@ -6,6 +6,7 @@ import {Property, EquipmentType, EquipmentMaterials} from "./Property.sol";
 import {FloorIndex} from "./FloorIndex.sol";
 import {Rarity} from "./Attribute.sol";
 import {Seed} from "./Seed.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 library Battle {
     using Seed for bytes32;
@@ -85,7 +86,7 @@ library Battle {
             );
 
             if (rv.stunChance > 0) {
-                if (uint8(roll3[i]) < (rv.stunChance * 256) / 100) stunned = true;
+                if (uint256(uint8(roll3[i])) * 100 < rv.stunChance * 255) stunned = true;
             }
 
             if (parity == 0) {
@@ -101,19 +102,14 @@ library Battle {
         aHealthFinal = aHealth;
     }
 
-    function rewardCoins(uint256 floorIndex) internal pure returns (uint256 coinCount) {
-        unchecked {
-            coinCount = floorIndex.isBossFloor() ? (floorIndex + 1) + 5 : floorIndex / 5 + 1;
-            coinCount *= 1 ether;
-        }
-    }
-
     function rewardItems(bytes32 seed, uint256 floorIndex) internal pure returns (uint256[] memory assetIds) {
         unchecked {
             bool isBoss = floorIndex.isBossFloor();
-            // 1 or 2
-            uint256 count = (uint8(seed[4]) % 2) + 1;
-            // around 5% or 0
+            // item count range [0,1,2]
+            uint256 count = uint8(seed[4]) % 3;
+            if (count == 0) return new uint256[](0);
+
+            // If it's a Boss floor and above floor 69, there is a 5% chance to obtain an S-rank items
             uint8 s = (isBoss && floorIndex > 69) ? 13 : 0;
 
             assetIds = new uint256[](count);
@@ -165,9 +161,11 @@ library Battle {
         returns (uint8 level, Rarity rarity, EquipmentMaterials materials, EquipmentType typ)
     {
         level = Property.calEquipmentLevel(floorIndex);
-        rarity = Property.calRarity(uint8(seed[1]), floorIndex);
-        materials = Property.calEquipmentMaterials(uint8(seed[2]));
-        typ = EquipmentType(uint8(seed[3]) % 3);
+        rarity = FloorIndex.isBossFloor(floorIndex)
+            ? Property.calRarityForDefeatedBoss(uint8(seed[2]), floorIndex)
+            : Property.calRarity(uint8(seed[2]), floorIndex);
+        materials = Property.calEquipmentMaterials(uint8(seed[3]));
+        typ = EquipmentType(uint8(seed[4]) % 3);
     }
 
     function _calculateDamage(
@@ -182,9 +180,13 @@ library Battle {
     ) internal pure returns (uint256) {
         uint256 damage = 1;
 
-        if (attack > defense) {
-            damage = attack - defense;
-        }
+        // discarded
+        // if (attack > defense) {
+        //     damage = attack - defense;
+        // }
+
+        // damage = (attack * 100) / (100 + defense);
+        damage = Math.mulDiv(attack, 100, 100 + defense);
 
         if (isElementalAdvantage && damage > 1) {
             damage = (damage * 110) / 100;

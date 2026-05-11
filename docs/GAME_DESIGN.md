@@ -11,7 +11,7 @@
 - **代理模式**：游戏入口及英雄/背包模块均使用 **TransparentUpgradeableProxy（ERC1967）**，逻辑与存储分离。用户只与**游戏代理**地址交互；Hero、Inventory 仅允许游戏代理调用（`setPermit(gameProxy)`），玩家状态与资产不受影响。
 - **升级能力**：游戏代理由 **proxy admin** 管理，admin 调用代理上的 `upgradeToAndCall(newImplementation, data)` 即可更换 Game 逻辑（GameV1 → GameV2 等）；Hero/Inventory 代理同样可由各自 admin 升级其逻辑合约（HeroV1、InventoryV1）。
 - **权限与安全**：游戏逻辑合约（GameV1）仅负责 `initialize(heroLogic, inventoryLogic, gameToken, gameAssets)`，无自有存储；HeroV1/InventoryV1 通过 `setPermit` 将唯一调用方设为游戏代理，避免被任意地址直接调用。
-- **资产与代币**：ERC20 游戏代币与 ERC1155 资产合约采用「仅游戏代理可操作」设计（`setProxy(gameProxy)` 一次性绑定），由游戏合约统一 mint/burn，保证经济与掉落逻辑仅在受控入口执行。
+- **资产与代币**：ERC20 游戏代币与 ERC1155 资产合约采用「仅游戏代理可操作」设计（`authorize(gameProxy)` 一次性绑定），由游戏合约统一 mint/burn，保证经济与掉落逻辑仅在受控入口执行。
 - **随机数**：战斗、楼层生成、商店、锻造等核心随机逻辑使用 `block.prevrandao` 混合种子（`Randao.getSeed()`）；战斗奖励掉落使用Oracle **Chainlink VRF V2 Plus** 提供密码学安全的可验证随机数，详细说明见 **3.1 Chainlink VRF 随机数系统**。
 
 ------
@@ -44,10 +44,24 @@
 | 楼层与环境   | src/libraries/Environment.sol         | `struct Floor`、`Shop` 等楼层/环境生成逻辑  |
 | 战斗计算     | src/libraries/Battle.sol              | 战斗回合流程、伤害计算、奖励生成等         |
 | 属性枚举     | src/libraries/Attribute.sol           | 稀有度 `enum Rarity` 等基础枚举           |
-| 随机数封装   | src/libraries/Randao.sol, src/libraries/Seed.sol | 基于 `block.prevrandao` 的随机种子，用于战斗、楼层生成、商店、锻造等常规随机需求 |
-| Chainlink VRF | src/GameLogic.sol, src/GameV1.sol | Chainlink VRF V2 Plus：战斗胜利后请求随机数用于奖励掉落，`fulfillRandomWords` 回调直接发放资产，无需后端服务 |
-| 资产合约     | src/GameAssets.sol                    | ERC1155 资产合约（物品/装备/金币），仅游戏代理可 mint/burn |
-| 代币合约     | src/GameToken.sol                     | ERC20 游戏代币（用于兑换游戏内 Coin），仅游戏代理可 mint/burn |
+| 随机数封装   | src/random/Oracle.sol, src/libraries/Seed.sol | 目前暂时基于 `block.prevrandao` 的随机种子与派生工具，后续可能接入Oracle（如Chainlink或Pyth） |
+| 资产合约     | src/GameAssets.sol                    | ERC1155 资产合约（物品/装备/金币）         |
+| 代币合约     | src/GameToken.sol                     | ERC20 游戏代币（用于兑换游戏内 Coin）      |
+
+**文档结构索引（章节编号，便于交叉引用）**
+
+| 章节 | 内容 |
+|------|------|
+| 一 | 游戏概述 |
+| 二 | 游戏元素（2.1 持有物品～2.7 Puppet） |
+| 三 | 战斗系统（3.1 战斗流程、3.2 伤害公式） |
+| 四 | 数值设计（4.1 玩家升级～4.6 锻造房） |
+| 五 | 经济与奖励（5.1 经济模型～5.3 打怪奖励） |
+| 六 | 商店与锻造房（6.1 楼层选项随机～6.4 锻造房） |
+
+
+---
+>>>>>>> Stashed changes
 
 ## 二、游戏元素（物品、装备、玩家、敌人、建筑）
 
@@ -279,7 +293,7 @@ VRF_SUBSCRIPTION=<订阅 ID>
 ### 4.3 物品数值（书、血瓶）
 
 - **书（Book）**：使用后增加经验。根据当前合约实现：C=10，B=20，A=40，S=80（固定值）。
-- **血瓶（Potion）**：按稀有度恢复固定血量。根据当前合约实现：C=15，B=30，A=60，S=120。使用后：`health = min(healthMax, health + value)`。
+- **血瓶（Potion）**：按稀有度恢复固定血量。根据当前合约实现：C=50，B=100，A=200，S=1000。使用后：`health = min(healthMax, health + value)`。
 
 ---
 
@@ -370,7 +384,8 @@ VRF_SUBSCRIPTION=<订阅 ID>
 - **结果**（成功时）：  
   - `rarity_new = min(S, rarity_old + 1)`；`level_new = min(L1, L2)`。  
   - **主属性**与**副属性**按 4.2.3 计算，并 clamp 到 4.2.2 上限。  
-- **金币消耗**：`cost_merge = 5 + 3 * level_new + 5 * rarity_oldIndex`（rarity_oldIndex：C/B/A → 0/1/2；S 不再参与合成）。
+- **金币消耗**：`cost_merge = 10 + 3 * level_new + 5 * rarity_oldIndex`（rarity_oldIndex：C/B/A → 0/1/2；S 不再参与合成）。  
+  - 简化形式（按稀有度）：C=50，B=100，A=150（S 不再合成）。
 - **成功概率**：`P_merge = max(20%, 90% - 3% * level_new)`。低等级接近 90%，高等级逐渐下降，不低于 20%。  
 - **失败时**：随机销毁两件中的一件（各 50%），另一件保留；金币照扣。
 
@@ -475,10 +490,10 @@ Puppet 按稀有度 C/B/A/S 获得金币，公式如下。
 
 **打败敌人获得物品规则**
 
-- 打败 BOSS：可获得所有稀有度的物品；S 仅 BOSS 掉落，概率约 5%；每次击败 BOSS 掉落 **2 件** 物品（种类独立 roll）。
-- 打败小怪：仅掉落 **1 件**；**不能** 掉落 S 稀有度；稀有度按权重随机。
-- 物品种类权重（从高到低）：potion > book。建议权重：potion=70，book=30（再按稀有度细分）。
-- 小怪稀有度：C 最高，逐级递减；B/A 适中；小怪不掉 S。
+- 打败 BOSS：可获得所有稀有度的物品；S 仅 BOSS 在 69 层以上时有约 5% 概率掉落；每次击败 BOSS 掉落 **0-2 件** 物品（种类独立 roll）。
+- 打败小怪：掉落 **0-2 件**；**不能** 掉落 S 稀有度；稀有度按权重随机。
+- 物品种类权重（从高到低）：potion = 80%，book = 20%。
+- 小怪稀有度：C≈60%，B≈20%，A≈20%；小怪不掉 S。
 - **装备掉落**：战斗胜利有较小几率额外获得 **1 件装备**（随机类型：剑/甲/盾）；见 5.3.2。
 
 **5.3.2 装备掉落（战斗胜利小概率）**
@@ -506,40 +521,41 @@ Puppet 按稀有度 C/B/A/S 获得金币，公式如下。
 
 **步骤一：物品种类（type）**（仅针对消耗品，装备见 5.3.2）
 
-- 权重：potion = 80，book = 20（百分比）。
-- **公式**：`r = random`（random ∈ [0, 256)）；若 `r < 204` 则 **potion**，否则 **book**（179 = 256×80/100 下取整）。
+- 权重：potion = 80%，book = 20%。
+- **公式**：`r = random`（random ∈ [0, 256)）；若 `r < 204` 则 **potion**，否则 **book**（204 = 256×80/100 下取整）。
 
 **步骤二：稀有度（rarity）——区分 BOSS 与 小怪**
 
-- **BOSS 掉落**（C/B/A/S，S 约 5%）  
-  - 权重建议：S=5%，A=10%，B=30%，C=55%。  
+- **BOSS 掉落**（C/B/A/S，S 仅在 69 层以上有约 5% 概率）  
+  - 权重建议：S≈5%，A≈10%，B≈20%，C≈60%。  
   - **公式**：`r = random`（random ∈ [0, 256)）  
     - `r < 13` → **S**（13 = 256×5/100 下取整）  
-    - `r < 141` → **C**（141 = 13 + 256×55/100 下取整）  
-    - `r < 218` → **B**（218 = 141 + 256×30/100 下取整）  
-    - 否则 → **A**  
+    - `r < 26` → **A**（26 = 13 + 256×5/100 下取整）  
+    - `r < 78` → **B**（78 = 26 + 256×20/100 下取整）  
+    - 否则 → **C**  
   - 即：`rarityIndex = 0(C)/1(B)/2(A)/3(S)` 可由分段判断或查表得到。
 
 - **小怪掉落**（仅 C/B/A，不掉 S）  
-  - 权重建议：C=50%，B=30%，A=20%。  
+  - 权重建议：C≈60%，B≈20%，A≈20%。  
   - **公式**：`r = random`（random ∈ [0, 256)）  
-    - `r < 128` → **C**（128 = 256×50/100）  
-    - `r < 205` → **B**（205 = 128 + 256×30/100 下取整）  
+    - `r < 154` → **C**（154 = 256×60/100）  
+    - `r < 205` → **B**（205 = 154 + 256×20/100 下取整）  
     - 否则 → **A**  
   - 小怪永不掉落 S，无需 roll S 区间。
 
 **步骤三：单件掉落流程小结**
 
-- **小怪**：只掉 1 件消耗品；另按 5.3.2 判定是否额外掉 1 件装备。  
+- **小怪**：掉落 0–2 件消耗品；另按 5.3.2 判定是否额外掉 1 件装备。  
   1. 用 `seed_item` 得到 `random ∈ [0, 256)`；  
-  2. 种类：`random < 179` → potion，否则 book；  
-  3. 稀有度：再用一次随机（或同一 random 的高位/另一次 keccak）按小怪权重得 C/B/A；  
-  4. 生成对应 (type, rarity) 物品加入背包。  
-  5. 装备掉落：用独立 seed 判定是否掉装备；若掉，再 roll 类型（剑/甲/盾）、稀有度 C/B/A、等级（≤ min(20, 与楼层相关)）。
+  2. 数量：`count = random % 3`（0/1/2 件）；若 count=0 则不掉落；  
+  3. 种类：`random < 204` → potion，否则 book；  
+  4. 稀有度：再用一次随机按小怪权重得 C/B/A；  
+  5. 生成对应 (type, rarity) 物品加入背包。  
+  6. 装备掉落：用独立 seed 判定是否掉装备；若掉，再 roll 类型（剑/甲/盾）、稀有度 C/B/A、等级（≤ min(20, 与楼层相关)）。
 
-- **BOSS**：掉 2 件消耗品，**每件独立 roll**；另按 5.3.2 判定是否额外掉 1 件装备。  
-  1. 第 1 件：`seed_1 = keccak256(battleSeed, 0)` → 种类 + BOSS 稀有度（含 S）；  
-  2. 第 2 件：`seed_2 = keccak256(battleSeed, 1)` → 种类 + BOSS 稀有度（含 S）；  
+- **BOSS**：掉落 0–2 件消耗品，**每件独立 roll**；另按 5.3.2 判定是否额外掉 1 件装备。  
+  1. 第 1 件：`seed_1 = keccak256(battleSeed, 0)` → 数量 + 种类 + BOSS 稀有度（含 S）；  
+  2. 第 2 件：`seed_2 = keccak256(battleSeed, 1)` → 数量 + 种类 + BOSS 稀有度（含 S）；  
   3. 两件种类、稀有度均独立，可同 potion、同 rarity。  
   4. 装备掉落：用独立 seed 判定是否掉装备；若掉，再 roll 类型、稀有度 C/B/A、等级（≤ 20）。
 
@@ -621,7 +637,7 @@ Puppet 按稀有度 C/B/A/S 获得金币，公式如下。
     - 否则 → 血瓶  
 
 - **若为装备（剑/盾/甲）**：rarity 在 [C, maxRarity] 内随机；level = floorIndex / 5 +1；material 在 Wooden / Iron / Obsidian 中随机一种。  
-- **若为书或血瓶**：rarity 在 [C, maxRarity] 内随机，数值按 **4.3**（书 C/B/A 对应 10/20/40 经验，血瓶 15/30/60 血量；商店无 S 故无 80/120）。  
+- **若为书或血瓶**：rarity 在 [C, maxRarity] 内随机，数值按 **4.3**（书 C/B/A 对应 10/20/40 经验，血瓶 50/100/200 血量；商店无 S 故无 80/1000）。  
 
 
 **小结表**
@@ -645,10 +661,10 @@ Puppet 按稀有度 C/B/A/S 获得金币，公式如下。
   - 示例：1 级 C=5，10 级 B=35，20 级 A=78。
 
 - **书**  
-  `cost_book = 3 + 5 * rarityIndex`（C=3，B=8，A=13）。
+  `cost_book = 30 + 50 * rarityIndex`（C=30，B=80，A=130）。
 
 - **血瓶**  
-  `cost_potion = 2 + 4 * rarityIndex`（C=2，B=6，A=10）。
+  `cost_potion = 20 + 40 * rarityIndex`（C=20，B=60，A=100）。
 
 
 ---
@@ -665,7 +681,7 @@ Puppet 按稀有度 C/B/A/S 获得金币，公式如下。
 | 操作 | 公式 | 说明 |
 |------|------|------|
 | **升级**（单件 L→L+1） | `cost_upgrade = 3 + 2 * L` | L=1→5，L=10→23，L=20→43。 |
-| **合成**（两件合为 Rarity+1） | `cost_merge = 5 + 3 * main_level + 5 * rarity_oldIndex` | rarity_oldIndex：C/B/A → 0/1/2（S 不再合成）。 |
+| **合成**（两件合为 Rarity+1） | `cost_merge = 10 + 3 * main_level + 5 * rarity_oldIndex` | rarity_oldIndex：C/B/A → 0/1/2（S 不再合成）。简化：C=50，B=100，A=150。 |
 
 **升级（4.6.1）**
 
@@ -678,7 +694,8 @@ Puppet 按稀有度 C/B/A/S 获得金币，公式如下。
 
 - 输入：两件同类型、同材料、同 Rarity 的装备，level 分别为 L1、L2。  
 - 结果（成功时）：`rarity_new = min(S, rarity_old + 1)`，`level_new = min(L1, L2)`；主属性与副属性按 4.2.3 计算，并 clamp 到 4.2.2 上限。  
-- 消耗金币：`cost_merge = 5 + 3 * main_level + 5 * rarity_oldIndex`（rarity_oldIndex：C/B/A → 0/1/2）。  
+- 消耗金币：`cost_merge = 10 + 3 * main_level + 5 * rarity_oldIndex`（rarity_oldIndex：C/B/A → 0/1/2）。  
+  - 简化形式（按稀有度）：C=50，B=100，A=150（S 不再合成）。  
 - 成功概率：固定与稀有度挂钩，与等级无关：C=60%，B=30%，A=5%，S 不再参与合成。失败时**随机销毁两件中的一件**（各 50%），另一件保留。
 
 **锻造房限制（4.6.3）**

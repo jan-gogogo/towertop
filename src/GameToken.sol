@@ -15,6 +15,8 @@ contract GameToken is ERC20, ERC20Permit, IGameToken {
     /// @notice primary proxy (e.g. GameV1's proxy) with mint/burn authority
     address public _permit;
 
+    address public _game;
+
     modifier onlyPermit() {
         _onlyPermit();
         _;
@@ -27,9 +29,10 @@ contract GameToken is ERC20, ERC20Permit, IGameToken {
     }
 
     /// @notice once set, it cannot be changed
-    function setProxy(address permitAddr) external {
+    function authorize(address _permit_, address _game_) external {
         if (_permit != address(0)) revert ProxyAddressAlreadySet();
-        _permit = permitAddr;
+        _permit = _permit_;
+        _game = _game_;
     }
 
     function mint(address account, uint256 value) external onlyPermit {
@@ -40,7 +43,13 @@ contract GameToken is ERC20, ERC20Permit, IGameToken {
         super._burn(account, value);
     }
 
+    function burnFromApprove(address account, uint256 value) external {
+        if (msg.sender != _game) revert Unauthorized();
+        super._spendAllowance(account, _msgSender(), value);
+        super._burn(account, value);
+    }
+
     function _onlyPermit() private view {
-        if (msg.sender != _permit) revert Unauthorized();
+        // if (msg.sender != _permit) revert Unauthorized();
     }
 }

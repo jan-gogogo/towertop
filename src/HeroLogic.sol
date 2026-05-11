@@ -5,6 +5,7 @@ import {Player, Character, AbilitiesExtra} from "./libraries/Character.sol";
 import {Floor, Environment} from "./libraries/Environment.sol";
 import {Aoka, Enemy} from "./libraries/Enemy.sol";
 import {Battle} from "./libraries/Battle.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /**
@@ -20,7 +21,7 @@ abstract contract HeroLogic is IHeroLogic {
     address public _permit;
 
     mapping(address => Player) internal _players;
-    mapping(address => uint256[4]) internal _equipped; // 0:Sword 1:Armor 2:Shield 3:Puppet
+    mapping(address => uint256[3]) internal _equipped; // 0:Sword 1:Armor 2:Shield
     mapping(address => Floor) internal _floor;
 
     modifier onlyPermit() {
@@ -70,7 +71,7 @@ abstract contract HeroLogic is IHeroLogic {
         playerWin = (aokaHealthFinal == 0);
         if (!playerWin) {
             // If aoka wins, recover 20% health
-            aokaHealthFinal = aokaHealthFinal / 10 * 12;
+            aokaHealthFinal += Math.mulDiv(aokaHealthFinal, 2000, 10000);
             if (aokaHealthFinal > enemyHealthOri) {
                 aokaHealthFinal = enemyHealthOri;
             }
@@ -84,7 +85,7 @@ abstract contract HeroLogic is IHeroLogic {
     }
 
     function equip(address addr, uint256 equipmentId, uint256 slot) external onlyPermit {
-        if (slot > 3) revert ArrayOutOfBounds();
+        if (slot > 2) revert ArrayOutOfBounds();
         _equipped[addr][slot] = equipmentId;
     }
 
@@ -99,23 +100,29 @@ abstract contract HeroLogic is IHeroLogic {
         _constructFloorData(floor, floor.index, seed);
     }
 
-    function nextFloor(address addr, bytes32 seed) external onlyPermit {
+    function nextFloor(address addr, bytes32 seed) external onlyPermit returns (uint256 cost) {
         Floor storage floor = _floor[addr];
         uint8 curIndex = floor.index;
         if (curIndex >= 99) revert ReachedTheTopFloor();
+
         uint256 enemyCount = floor.enemies.length;
         for (uint256 i = 0; i < enemyCount; i++) {
             if (floor.enemies[i].health > 0) revert MustDefeatAllEenemies();
         }
         Environment.clearFloor(floor);
-        floor.index = curIndex + 1;
-        _constructFloorData(floor, floor.index, seed);
+        uint8 entryFloor = curIndex + 1;
+        floor.index = entryFloor;
+
+        cost = Environment.calEntryCost(uint256(entryFloor));
+
+        _constructFloorData(floor, uint256(entryFloor), seed);
     }
 
-    function circle(address addr, bytes32 seed) external onlyPermit {
+    function circle(address addr, bytes32 seed) external onlyPermit returns (uint256 cost) {
         Floor storage floor = _floor[addr];
         if (floor.index != 99) revert NotAt100Floor();
         Player storage player = _players[addr];
+        cost = Character.calCircleCost(player.courage);
         Character.circle(player);
         Environment.clearFloor(floor);
         _constructFloorData(floor, floor.index, seed);
@@ -133,9 +140,19 @@ abstract contract HeroLogic is IHeroLogic {
         } else if (typeIndex == 1) {
             if (slot < floor.shop.equipments.length) {
                 delete floor.shop.equipments[slot];
-                delete floor.shop.equipmentPrices[slot];
             }
         }
+    }
+
+    function isEquiped(address addr, uint256 equipmentId) external view returns (bool) {
+        uint256[3] storage equipedArr = _equipped[addr];
+        uint256 len = equipedArr.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (equipedArr[i] == equipmentId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function getPlayer(address addr) external view returns (Player memory) {
@@ -150,7 +167,7 @@ abstract contract HeroLogic is IHeroLogic {
         return _floor[addr].enemies;
     }
 
-    function getEquippedIds(address addr) external view returns (uint256[4] memory) {
+    function getEquippedIds(address addr) external view returns (uint256[3] memory) {
         return _equipped[addr];
     }
 
@@ -176,8 +193,8 @@ abstract contract HeroLogic is IHeroLogic {
     }
 
     function _findEquippedSlot(address addr, uint256 equipmentId) private view returns (uint256) {
-        uint256[4] storage slots = _equipped[addr];
-        for (uint256 i = 0; i < 4; i++) {
+        uint256[3] storage slots = _equipped[addr];
+        for (uint256 i = 0; i < 3; i++) {
             if (slots[i] == equipmentId) return i;
         }
         revert IHeroLogic.NotEquippedId(equipmentId);

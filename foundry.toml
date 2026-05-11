@@ -6,3 +6,8 @@ via_ir = true
 optimizer = true
 optimizer_runs = 200
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+[invariant]
+runs = 10        # 进行多少次独立的测试序列
+depth = 1000        # 每个序列中随机调用函数的次数
+fail_on_revert = true # 如果某个随机调用导致了 revert，是否判为失败

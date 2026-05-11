@@ -24,3 +24,6 @@ foundry.lock
 
 .DS_Store
 .env
+
+test_*
+*.csv

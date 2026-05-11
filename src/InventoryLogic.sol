@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 import {IInventoryLogic} from "./interfaces/IInventoryLogic.sol";
 import {Rarity} from "./libraries/Attribute.sol";
-import {Property, Equipment, Puppet, EquipmentType, ItemType, EquipmentMaterials} from "./libraries/Property.sol";
+import {Property, Equipment, EquipmentType, ItemType, EquipmentMaterials} from "./libraries/Property.sol";
 import {Seed} from "./libraries/Seed.sol";
 import {Battle} from "./libraries/Battle.sol";
 import {Rarity} from "./libraries/Attribute.sol";
@@ -10,10 +10,10 @@ import {Rarity} from "./libraries/Attribute.sol";
 /**
  * @title InventoryLogic
  * @author Jan
- * @notice Holds bag, warehouse, equipment and puppet data. Handles add/remove items, use consumables (book/potion),
+ * @notice Holds bag, warehouse, equipment data. Handles add/remove items, use consumables (book/potion),
  *         shop buy, equipment upgrade/merge, and battle rewards. Callable only by the permitted Game proxy.
  * @dev Used behind a proxy (e.g. InventoryV1). setPermit(gameProxy) must be called once after deployment.
- *      Equipment IDs: 1e9..4e9-1 for gear, 4e9..5e9-1 for puppets.
+ *      Equipment IDs: 1e9..4e9-1 for gear.
  */
 abstract contract InventoryLogic is IInventoryLogic {
     using Seed for bytes32;
@@ -28,19 +28,15 @@ abstract contract InventoryLogic is IInventoryLogic {
     uint256 private constant BAG_CAP = 100;
     uint256 private constant WAREHOUSE_CAP = 100;
     uint256 private constant EQUIPMENT_ID_START = 1e9;
-    uint256 private constant EQUIPMENT_ID_CAP = 4e9;
-    uint256 private constant PUPPET_ID_START = 4e9;
-    uint256 private constant PUPPET_ID_CAP = 5e9;
+    uint256 private constant EQUIPMENT_ID_CAP = 4e9; // [1e9,4e9]
 
     address public _permit;
 
     mapping(address => uint256[]) private _bag;
     mapping(address => uint256[]) private _warehouse;
     mapping(uint256 id => Equipment) private _equipments;
-    mapping(uint256 id => Puppet) private _puppets;
 
     uint256 private _nextEquipmentId;
-    uint256 private _nextPuppetId;
 
     modifier onlyPermit() {
         _onlyPermit();
@@ -66,15 +62,6 @@ abstract contract InventoryLogic is IInventoryLogic {
         returns (uint256 equipmentId)
     {
         return _addEquipmentInternal(addr, equipment);
-    }
-
-    function addPuppet(address addr, uint8 rarity, uint40 lastClaimAt) external onlyPermit returns (uint256 puppetId) {
-        uint256 latest = _nextPuppetId;
-        if (latest >= PUPPET_ID_CAP) revert CapacityExceeded();
-        _puppets[latest] = Puppet({rarity: Rarity(rarity), lastClaimAt: lastClaimAt});
-        _nextPuppetId++;
-        _addToWarehouse(addr, latest);
-        return latest;
     }
 
     function removeFromWarehouse(address addr, uint256 equipmentId) external onlyPermit {
@@ -134,19 +121,24 @@ abstract contract InventoryLogic is IInventoryLogic {
         onlyPermit
         returns (uint256 cost, uint256 assetId)
     {
-        cost = Property.equipmentCost(equipment.level, equipment.rarity);
+        cost = Property.equipmentCost(equipment.growth, equipment.rarity);
         assetId = _addEquipmentInternal(addr, equipment);
     }
 
-    function upgrade(address, uint256 equipmentId, bytes32 seed) external onlyPermit returns (uint256 cost) {
+    function upgrade(address, uint256 equipmentId, bytes32 seed)
+        external
+        onlyPermit
+        returns (uint256 cost, uint256 ingredients)
+    {
         if (equipmentId == 0) revert InvalidEquipmentId(equipmentId);
         Equipment storage e = _equipments[equipmentId];
-        if (equipmentId >= PUPPET_ID_START) revert InvalidEquipmentId(equipmentId);
+        if (equipmentId > EQUIPMENT_ID_CAP) revert InvalidEquipmentId(equipmentId);
         uint8 curLevel = e.level;
         if (curLevel >= Property.MAX_EQUIPMENT_LEVEL) revert ReachedMaxLevel();
-        cost = Property.upgradeEquipmentCost(curLevel);
+        cost = Property.upgradeEquipmentCost(e.rarity, curLevel);
+        ingredients = Property.upgradeEquipmentIngredients(e.rarity, e.attack, e.defense);
         bytes32 upgradeSeed = seed.change(7, SEED_MIX_UPGRADE);
-        if (Property.determineUpgrade(uint8(upgradeSeed[0]), curLevel)) {
+        if (Property.determineUpgrade(uint8(upgradeSeed[0]), e.rarity, curLevel)) {
             _upgradeEquipment(equipmentId);
         }
     }
@@ -158,7 +150,7 @@ abstract contract InventoryLogic is IInventoryLogic {
     {
         if (mainId == 0 || subId == 0) revert InvalidEquipmentId(0);
         Equipment storage mainRef = _equipments[mainId];
-        if (mainId >= PUPPET_ID_START) revert InvalidEquipmentId(mainId);
+        if (mainId > EQUIPMENT_ID_CAP) revert InvalidEquipmentId(mainId);
         return _mergeEquipment(addr, mainRef.etype, mainId, subId, seed);
     }
 
@@ -173,7 +165,6 @@ abstract contract InventoryLogic is IInventoryLogic {
             equipmentId = _rollEquipmentReward(winner, rewardSeed, floorIndex);
         }
         uint256[] memory itemIds = Battle.rewardItems(rewardSeed, floorIndex);
-        uint256 coinCount = Battle.rewardCoins(floorIndex);
 
         uint256 itemLen = itemIds.length;
         if (itemLen > 0) {
@@ -182,7 +173,6 @@ abstract contract InventoryLogic is IInventoryLogic {
 
         uint256 assetCount = itemLen;
         if (equipmentId > 0) assetCount++;
-        if (coinCount > 0) assetCount++;
 
         if (assetCount == 0) return (new uint256[](0), new uint256[](0));
 
@@ -199,10 +189,6 @@ abstract contract InventoryLogic is IInventoryLogic {
             values[pos] = 1;
             pos++;
         }
-        if (coinCount > 0) {
-            assetIds[pos] = Property.COIN_ID;
-            values[pos] = coinCount;
-        }
     }
 
     function getBag(address addr) external view returns (uint256[] memory) {
@@ -217,19 +203,14 @@ abstract contract InventoryLogic is IInventoryLogic {
         return _equipments[id];
     }
 
-    function getPuppet(uint256 id) external view returns (Puppet memory) {
-        return _puppets[id];
-    }
-
-    function isValidEquipment(uint256 id) external pure returns (bool) {
-        return (id >= EQUIPMENT_ID_START && id < EQUIPMENT_ID_CAP) || (id >= PUPPET_ID_START && id < PUPPET_ID_CAP);
+    function isValidEquipment(uint256 id) external view returns (bool) {
+        return _equipments[id].level > 0;
     }
 
     /// @notice Initialize next-IDs (for proxy: call from implementation's initialize(); constructor only runs on impl, not on proxy).
     function _initNextIds() internal {
         if (_nextEquipmentId != 0) return;
         _nextEquipmentId = EQUIPMENT_ID_START;
-        _nextPuppetId = PUPPET_ID_START;
     }
 
     /// @notice add a new weaponId to player's warehouse
@@ -280,7 +261,7 @@ abstract contract InventoryLogic is IInventoryLogic {
 
     function _addEquipmentInternal(address addr, Equipment memory equipment) private returns (uint256) {
         uint256 latest = _nextEquipmentId;
-        if (latest >= EQUIPMENT_ID_CAP) revert CapacityExceeded();
+        if (latest > EQUIPMENT_ID_CAP) revert CapacityExceeded();
         _equipments[latest] = equipment;
         _nextEquipmentId++;
         _addToWarehouse(addr, latest);
@@ -291,11 +272,9 @@ abstract contract InventoryLogic is IInventoryLogic {
         Equipment storage e = _equipments[equipmentId];
         e.level++;
         if (e.etype == EquipmentType.Sword) {
-            e.attack = Property.calAttackForSword(e.rarity, e.level);
-        } else if (e.etype == EquipmentType.Armor) {
-            e.defense = Property.calDefenseForArmor(e.rarity, e.level);
+            e.attack = Property.calMainAttribute(EquipmentType.Sword, e.growth, e.level);
         } else {
-            e.defense = Property.calDefenseForShield(e.rarity, e.level);
+            e.defense = Property.calMainAttribute(e.etype, e.growth, e.level);
         }
     }
 
@@ -305,7 +284,7 @@ abstract contract InventoryLogic is IInventoryLogic {
     {
         if (mainId == subId) revert SameEquipmentIds();
         Equipment storage subRef = _equipments[subId];
-        if (subId >= PUPPET_ID_START || subRef.etype != typ) revert InvalidEquipmentId(subId);
+        if (subRef.etype != typ) revert InvalidEquipmentId(subId);
         uint256[] storage warehouse = _warehouse[addr];
         uint256 len = warehouse.length;
         uint256 subIdx = len;
@@ -324,7 +303,7 @@ abstract contract InventoryLogic is IInventoryLogic {
             if (mainRef.rarity != subRef.rarity) revert CannotMerge();
         }
         if (mainRef.rarity == Rarity.S) revert ReachedMaxLevel();
-        cost = Property.mergeEquipmentCost(mainRef.level, mainRef.rarity);
+        cost = Property.mergeEquipmentCost(mainRef.rarity);
         if (Property.determineMerge(uint8(mergeSeed[0]), mainRef.rarity)) _equipmentEvolve(mainRef);
         delete warehouse[subIdx];
         delete _equipments[subId];
@@ -333,19 +312,15 @@ abstract contract InventoryLogic is IInventoryLogic {
     function _equipmentEvolve(Equipment storage e) private {
         Rarity newRarity = Rarity(uint8(e.rarity) + 1);
         e.rarity = newRarity;
+
         if (e.etype == EquipmentType.Sword) {
-            (uint16 crit, uint16 critChance,, uint16 stunChance) = Property.calSecondAttributes(newRarity);
-            e.attack = Property.calAttackForSword(newRarity, e.level);
+            (uint16 crit, uint16 critChance) = Property.calSecondAttributeForSword(newRarity, e.growth);
             e.crit = crit;
             e.critChance = critChance;
-            e.stunChance = stunChance;
         } else if (e.etype == EquipmentType.Armor) {
-            e.defense = Property.calDefenseForArmor(newRarity, e.level);
-        } else {
-            (,, uint16 blockChance, uint16 stunChance) = Property.calSecondAttributes(newRarity);
-            e.blockChance = blockChance;
-            e.stunChance = stunChance;
-            e.defense = Property.calDefenseForShield(newRarity, e.level);
+            e.blockChance == Property.calSecondAttributeForArmor(newRarity, e.growth);
+        } else if (e.etype == EquipmentType.Shield) {
+            e.stunChance = Property.calSecondAttributeForShield(newRarity, e.growth);
         }
     }
 
@@ -361,27 +336,37 @@ abstract contract InventoryLogic is IInventoryLogic {
         private
         returns (uint256 equipmentId)
     {
+        uint16 growth = Property.getGrowthForVictory(uint8(rewardSeed[0]), uint8(rewardSeed[1]));
+
         (uint8 level, Rarity rarity, EquipmentMaterials materials, EquipmentType typ) =
             Battle.rewardEquipment(rewardSeed, floorIndex);
-        (uint16 crit, uint16 critChance, uint16 blockChance, uint16 stunChance) =
-            Property.calSecondAttributesDirectly(rarity);
 
         Equipment memory eq;
         eq.etype = typ;
         eq.materials = materials;
         eq.rarity = rarity;
         eq.level = level;
+        eq.growth = growth;
+
+        uint16 mainValue = Property.calMainAttribute(typ, growth, level);
+        uint16 attack = 0;
+        uint16 defense = 0;
+        if (EquipmentType.Sword == typ) {
+            attack = mainValue;
+        } else {
+            defense = mainValue;
+        }
+        eq.attack = attack;
+        eq.defense = defense;
+
         if (typ == EquipmentType.Sword) {
-            eq.attack = Property.calAttackForSword(rarity, level);
+            (uint16 crit, uint16 critChance) = Property.calSecondAttributeForSword(rarity, growth);
             eq.crit = crit;
             eq.critChance = critChance;
-            eq.stunChance = stunChance;
         } else if (typ == EquipmentType.Armor) {
-            eq.defense = Property.calDefenseForArmor(rarity, level);
+            eq.blockChance = Property.calSecondAttributeForArmor(rarity, growth);
         } else {
-            eq.defense = Property.calDefenseForShield(rarity, level);
-            eq.blockChance = blockChance;
-            eq.stunChance = stunChance;
+            eq.stunChance = Property.calSecondAttributeForShield(rarity, growth);
         }
         equipmentId = _addEquipmentInternal(winner, eq);
     }

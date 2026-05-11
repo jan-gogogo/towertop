@@ -79,6 +79,10 @@ library Character {
         }
     }
 
+    function calCircleCost(uint8 courage) internal pure returns (uint256) {
+        return (500 + 500 * uint256(courage)) * 1 ether;
+    }
+
     function circle(Player storage player) internal {
         Player memory ip = initPlayer();
         player.level = ip.level;
