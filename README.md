@@ -44,7 +44,7 @@ The player starts on floor 1 and climbs up to floor 100 by defeating monsters, c
 
 ### Documentation
 
-- **[Game design document 游戏设计文档](docs/GAME_DESIGN.md)** – Full game design (mechanics, formulas, economy, combat, floors, shop/forge). Includes technical notes on TransparentUpgradeableProxy, Game/Hero/Inventory split, and contract architecture.
+- **[Game design document 游戏设计文档](docs/GAME_DESIGN.md)** – Full game design (mechanics, formulas, economy, combat, floors, shop/forge). Includes technical notes on UUPSUpgradeable proxy, Two-Step ownership, Game/Hero/Inventory split, and contract architecture.
 
 ---
 
@@ -57,16 +57,16 @@ The game uses **three proxies** (Game, Hero, Inventory), each with logic/storage
 
 | Contract   | Path              | Description |
 |-----------|-------------------|-------------|
-| **GameV1** | `src/GameV1.sol`  | Game logic implementation: inherits GameLogic, `initialize(heroLogic, inventoryLogic, gameToken, gameAssets)`. Deployed as implementation behind a TransparentUpgradeableProxy; proxy admin can upgrade via `upgradeToAndCall`. |
+| **GameV1** | `src/GameV1.sol`  | Game logic implementation: inherits GameLogic, UUPSUpgradeable, Ownable2StepUpgradeable. `initialize(heroLogic, inventoryLogic, gameToken, gameAssets, protocol, vrfCoordinator, keyHash, subscription, owner)`. Uses ERC1967Proxy with UUPS; only owner can upgrade via `upgradeToAndCall`. Ownership uses two-step transfer (transferOwnership → acceptOwnership). |
 
 ### Core contracts
 
 | Contract       | Path                | Description |
 |----------------|---------------------|-------------|
 | **GameLogic**  | `src/GameLogic.sol` | Abstract: single entry for born, battle, nextFloor, buy, equip, deposit/withdraw, etc.; delegates to HeroLogic and InventoryLogic, and mints/burns token and assets. |
-| **HeroLogic** / **HeroV1** | `src/HeroLogic.sol`, `src/HeroV1.sol` | Player state, floor state, equipped slots, combat. HeroV1 is the logic contract behind the Hero proxy; only the Game proxy may call it after `setPermit(gameProxy)`. |
-| **InventoryLogic** / **InventoryV1** | `src/InventoryLogic.sol`, `src/InventoryV1.sol` | Bag, warehouse, equipment/items, shop and forge logic. InventoryV1 is behind the Inventory proxy; only the Game proxy may call it. |
-| **TransparentUpgradeableProxy** | `src/TransparentUpgradeableProxy.sol` | ERC1967 transparent proxy used for Game, Hero, and Inventory. Admin calls `upgradeToAndCall` on the proxy to upgrade the implementation. |
+| **HeroLogic** / **HeroV1** | `src/HeroLogic.sol`, `src/HeroV1.sol` | Player state, floor state, equipped slots, combat. HeroV1 inherits UUPSUpgradeable and Ownable2StepUpgradeable; only the Game proxy may call it after `setPermit(gameProxy)`. Owner can upgrade via `upgradeToAndCall`. |
+| **InventoryLogic** / **InventoryV1** | `src/InventoryLogic.sol`, `src/InventoryV1.sol` | Bag, warehouse, equipment/items, shop and forge logic. InventoryV1 inherits UUPSUpgradeable and Ownable2StepUpgradeable; only the Game proxy may call it. Owner can upgrade via `upgradeToAndCall`. |
+| **ERC1967Proxy** | `src/ERC1967Proxy.sol` | ERC1967 proxy used for Game, Hero, and Inventory. Inherits UUPSUpgradeable for upgrade authorization; owner calls `upgradeToAndCall` to upgrade the implementation. |
 | **GameAssets** | `src/GameAssets.sol`| ERC1155: equipment, items, gold. Only the Game proxy can mint/burn after `setProxy(gameProxy)`. |
 | **GameToken**  | `src/GameToken.sol` | ERC20 “Aoka Tower Token” (ATT). Only the Game proxy can mint/burn after `setProxy(gameProxy)`. |
 
@@ -109,13 +109,38 @@ The game uses **three proxies** (Game, Hero, Inventory), each with logic/storage
 - A `mapping(uint256 requestId => RewardWinner)` stores pending reward state; `floorIndex == uint256.max` marks a processed request to prevent reentrancy.
 - Test suite uses `VRFCoordinatorV2_5Mock` from `@chainlink`; deployment uses real VRF subscription via `.env` (`VRF_COORDINATOR`, `VRF_KEY_HASH`, `VRF_SUBSCRIPTION`).
 
+### UUPS Upgradeable Proxy
+
+The game uses **UUPS (Universal Upgradeable Proxy Standard)** pattern for all upgradeable contracts:
+
+|| Contract | Upgrade Mechanism |
+||----------|------------------|
+|| **GameV1** | Owner calls `upgradeToAndCall(newImplementation, data)` on the proxy |
+|| **HeroV1** | Owner calls `upgradeToAndCall(newImplementation, data)` on the proxy |
+|| **InventoryV1** | Owner calls `upgradeToAndCall(newImplementation, data)` on the proxy |
+
+**Key differences from Transparent Proxy:**
+- UUPS embeds upgrade authorization in the implementation contract (via `_authorizeUpgrade`), not in the proxy
+- Gas efficient: no separate admin slot, upgrade logic lives in implementation
+- Each implementation must inherit `UUPSUpgradeable` and implement `_authorizeUpgrade`
+
+### Two-Step Ownership Transfer
+
+All upgradeable contracts use **Ownable2StepUpgradeable** for enhanced security:
+
+1. **Initiate transfer**: Current owner calls `transferOwnership(newAddress)`
+2. **Accept ownership**: Pending owner calls `acceptOwnership()` to finalize
+3. **Cancel**: Current owner can call `cancelOwnershipTransfer()` before acceptance
+
+This prevents accidental loss of contract control if an wrong address is provided during ownership transfer.
+
 ---
 
 ## Scripts
 
 | Script | Description |
 |--------|-------------|
-| **DeployGame** | `script/DeployGame.s.sol` – Deploy GameToken, GameAssets, GameV1, HeroV1, InventoryV1 and their TransparentUpgradeableProxies; initialize and wire `setPermit` / `setProxy` so the game proxy is the single entry. |
+| **DeployGame** | `script/DeployGame.s.sol` – Deploy GameToken, GameAssets, GameV1, HeroV1, InventoryV1 and their ERC1967Proxy (UUPS); initialize and wire `setPermit` / `setProxy` so the game proxy is the single entry. Ownership uses two-step transfer. |
 
 ---
 
@@ -190,7 +215,7 @@ Install Foundry by following the official guide:
 
 - **Scripts / Deployment**
 
-  Deploy script: `script/DeployGame.s.sol` deploys GameToken, GameAssets, GameV1, HeroV1, InventoryV1 and their TransparentUpgradeableProxies, wires `setPermit` and `setProxy`, then the game proxy is the single entry for users. Set env vars (e.g. `OWNER_ADDRESS`, deployer keys) or use `--private-key` as needed:
+  Deploy script: `script/DeployGame.s.sol` deploys GameToken, GameAssets, GameV1, HeroV1, InventoryV1 and their ERC1967Proxy (with UUPSUpgradeable), wires `setPermit` and `setProxy`, then the game proxy is the single entry for users. Ownership uses two-step transfer (transferOwnership → acceptOwnership). Set env vars (e.g. `OWNER_ADDRESS`, deployer keys) or use `--private-key` as needed:
 
   ```shell
   forge script script/DeployGame.s.sol --rpc-url <your_rpc_url> --broadcast

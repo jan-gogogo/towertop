@@ -8,8 +8,11 @@
 
 ### 技术架构（合约层）：
 
-- **代理模式**：游戏入口及英雄/背包模块均使用 **TransparentUpgradeableProxy（ERC1967）**，逻辑与存储分离。用户只与**游戏代理**地址交互；Hero、Inventory 仅允许游戏代理调用（`setPermit(gameProxy)`），玩家状态与资产不受影响。
-- **升级能力**：游戏代理由 **proxy admin** 管理，admin 调用代理上的 `upgradeToAndCall(newImplementation, data)` 即可更换 Game 逻辑（GameV1 → GameV2 等）；Hero/Inventory 代理同样可由各自 admin 升级其逻辑合约（HeroV1、InventoryV1）。
+- **代理模式**：游戏入口及英雄/背包模块均使用 **UUPSUpgradeable（ERC1967）**，逻辑与存储分离。用户只与**游戏代理**地址交互；Hero、Inventory 仅允许游戏代理调用（`setPermit(gameProxy)`），玩家状态与资产不受影响。
+- **升级能力**：游戏逻辑通过 **owner** 管理，使用 UUPS 代理模式。owner 调用 `upgradeToAndCall(newImplementation, data)` 即可更换 Game 逻辑（GameV1 → GameV2 等）；Hero/Inventory 代理同样由各自 owner 升级其逻辑合约（HeroV1、InventoryV1）。
+- **Two-Step 所有权变更**：所有权转移采用两步确认机制，防止误操作导致合约失控：
+  1. 原 owner 调用 `transferOwnership(newAddress)` 设置 pending owner
+  2. 新 owner 调用 `acceptOwnership()` 完成最终确认
 - **权限与安全**：游戏逻辑合约（GameV1）仅负责 `initialize(heroLogic, inventoryLogic, gameToken, gameAssets)`，无自有存储；HeroV1/InventoryV1 通过 `setPermit` 将唯一调用方设为游戏代理，避免被任意地址直接调用。
 - **资产与代币**：ERC20 游戏代币与 ERC1155 资产合约采用「仅游戏代理可操作」设计（`authorize(gameProxy)` 一次性绑定），由游戏合约统一 mint/burn，保证经济与掉落逻辑仅在受控入口执行。
 - **随机数**：战斗、楼层生成、商店、锻造等核心随机逻辑使用 `block.prevrandao` 混合种子（`Randao.getSeed()`）；战斗奖励掉落使用Oracle **Chainlink VRF V2 Plus** 提供密码学安全的可验证随机数，详细说明见 **3.1 Chainlink VRF 随机数系统**。
@@ -35,7 +38,7 @@
 | 游戏逻辑     | src/GameLogic.sol                     | `abstract contract GameLogic`：单一入口，将战斗/楼层/商店/锻造等委托给 HeroLogic、InventoryLogic，并管理代币与资产的 mint/burn |
 | 英雄逻辑     | src/HeroLogic.sol, src/HeroV1.sol     | 玩家、楼层、装备槽、战斗调用；HeroV1 为代理背后的逻辑合约，仅允许 `setPermit` 后的游戏代理调用 |
 | 背包逻辑     | src/InventoryLogic.sol, src/InventoryV1.sol | 背包、仓库、装备/物品、商店与锻造；InventoryV1 为代理背后逻辑，仅允许游戏代理调用 |
-| 代理         | src/TransparentUpgradeableProxy.sol   | ERC1967 透明代理，用于 Game / Hero / Inventory，admin 可 `upgradeToAndCall` 更换实现 |
+| 代理         | src/ERC1967Proxy.sol   | ERC1967 代理，用于 Game / Hero / Inventory，继承 UUPSUpgradeable，owner 可 `upgradeToAndCall` 更换实现 |
 | 接口定义     | src/interfaces/IGameLogic.sol         | `interface IGameLogic`：对外游戏 API 与错误类型 |
 | 英雄/背包接口 | src/interfaces/IHeroLogic.sol, IInventoryLogic.sol | 玩家与背包模块的只读与受控调用接口 |
 | 玩家         | src/libraries/Character.sol           | `struct Player` 及升级/轮回等辅助函数       |

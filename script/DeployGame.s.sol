@@ -9,14 +9,14 @@ import {HeroV1} from "../src/HeroV1.sol";
 import {InventoryV1} from "../src/InventoryV1.sol";
 import {Protocol} from "../src/Protocol.sol";
 import {FeePool} from "../src/FeePool.sol";
-import {TransparentUpgradeableProxy} from "../src/TransparentUpgradeableProxy.sol";
+import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
 import {IHeroLogic} from "../src/interfaces/IHeroLogic.sol";
 import {IInventoryLogic} from "../src/interfaces/IInventoryLogic.sol";
 
 /**
  * @notice Deploys the full Tower Top stack:
  *         GameToken, GameAssets (no proxy),
- *         GameV1, HeroV1, InventoryV1 (logic) + TransparentUpgradeableProxy each.
+ *         GameV1, HeroV1, InventoryV1 (logic) + ERC1967Proxy each (UUPS pattern).
  *         Wires setPermit(gameProxy) on Hero/Inventory and authorize(gameProxy) on Token/Assets.
  * @dev    Run with: forge script script/DeployGame.s.sol:DeployGame --rpc-url <RPC> --broadcast
  *         Optional env: OWNER_ADDRESS (proxy admin; default = broadcast sender).
@@ -38,9 +38,9 @@ contract DeployGame is Script {
         )
     {
         address owner = vm.envAddress("OWNER_ADDRESS");
-        uint256 tokenPrivKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        vm.startBroadcast(tokenPrivKey);
+        vm.startBroadcast(deployerPrivateKey);
 
         GameToken _token = new GameToken("Aoka Tower Token", "ATT");
         GameAssets _assets = new GameAssets("");
@@ -56,15 +56,17 @@ contract DeployGame is Script {
         HeroV1 heroImpl = new HeroV1();
         InventoryV1 inventoryImpl = new InventoryV1();
 
-        bytes memory heroInit = abi.encodeCall(HeroV1.initialize, (address(0)));
-        TransparentUpgradeableProxy _heroProxy = new TransparentUpgradeableProxy(address(heroImpl), owner, heroInit);
+        // Deploy Hero proxy (UUPS)
+        bytes memory heroInit = abi.encodeCall(HeroV1.initialize, (address(0), owner));
+        ERC1967Proxy _heroProxy = new ERC1967Proxy(address(heroImpl), heroInit);
         heroProxy = address(_heroProxy);
 
-        bytes memory inventoryInit = abi.encodeCall(InventoryV1.initialize, (address(0)));
-        TransparentUpgradeableProxy _inventoryProxy =
-            new TransparentUpgradeableProxy(address(inventoryImpl), owner, inventoryInit);
+        // Deploy Inventory proxy (UUPS)
+        bytes memory inventoryInit = abi.encodeCall(InventoryV1.initialize, (address(0), owner));
+        ERC1967Proxy _inventoryProxy = new ERC1967Proxy(address(inventoryImpl), inventoryInit);
         inventoryProxy = address(_inventoryProxy);
 
+        // Deploy Game proxy (UUPS)
         bytes memory gameInit = abi.encodeCall(
             GameV1.initialize,
             (
@@ -75,10 +77,11 @@ contract DeployGame is Script {
                 protocol,
                 vm.envAddress("VRF_COORDINATOR"),
                 vm.envBytes32("VRF_KEY_HASH"),
-                vm.envUint("VRF_SUBSCRIPTION")
+                vm.envUint("VRF_SUBSCRIPTION"),
+                owner
             )
         );
-        TransparentUpgradeableProxy _gameProxy = new TransparentUpgradeableProxy(address(gameImpl), owner, gameInit);
+        ERC1967Proxy _gameProxy = new ERC1967Proxy(address(gameImpl), gameInit);
         gameProxy = address(_gameProxy);
 
         IHeroLogic(heroProxy).setPermit(gameProxy);

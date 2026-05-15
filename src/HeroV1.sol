@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {HeroLogic} from "./HeroLogic.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 /**
  * @title HeroV1
@@ -13,7 +14,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  *         proxy address); only that address may call HeroLogic functions.
  * @dev Deploy as the implementation; point a proxy at it and call initialize(gameProxyAddress) on the proxy.
  */
-contract HeroV1 is HeroLogic, Initializable {
+contract HeroV1 is HeroLogic, UUPSUpgradeable, Ownable2StepUpgradeable {
     /**
      * @notice Constructor for the logic contract.
      * @dev Disables initializers on this contract so initialize() cannot be run in the logic contract's context.
@@ -31,7 +32,18 @@ contract HeroV1 is HeroLogic, Initializable {
      * @dev Runs in the proxy's context. Call from the proxy deploy script after deploying the proxy; do not
      *      call on the logic contract.
      */
-    function initialize(address _permit_) external initializer {
+    function initialize(address _permit_, address _owner_) external initializer {
         _permit = _permit_;
+
+        // Prevent accidental transfer to wrong address when changing owner.
+        // Uses Ownable2Step: two-step ownership transfer for safety.
+        // 1. Original owner calls transferOwnership(address) to set pendingOwner
+        // 2. New owner calls acceptOwnership() to finalize ownership
+        __Ownable_init(_owner_);
+        __Ownable2Step_init();
     }
+
+    /// @notice Authorizes upgrade (only owner can upgrade)
+    /// @dev Must use onlyOwner check here, otherwise anyone could change the implementation address
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 }
