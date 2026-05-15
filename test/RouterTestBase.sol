@@ -17,10 +17,10 @@ import {FeePool} from "../src/FeePool.sol";
 import {GameV1} from "../src/GameV1.sol";
 import {HeroV1} from "../src/HeroV1.sol";
 import {InventoryV1} from "../src/InventoryV1.sol";
-import {TransparentUpgradeableProxy} from "../src/TransparentUpgradeableProxy.sol";
+import {ERC1967Proxy} from "../src/ERC1967Proxy.sol";
 
 /**
- * @notice Deploys GameV1 + HeroV1 + InventoryV1 (each behind TransparentUpgradeableProxy)
+ * @notice Deploys GameV1 + HeroV1 + InventoryV1 (each behind ERC1967Proxy with UUPS)
  *         and wires GameToken/GameAssets so the Game proxy can mint/burn.
  *         Tests that need hero/inventory access (e.g. setPlayerHealth, setFloorIndex) use heroLogic/inventoryLogic.
  */
@@ -58,15 +58,17 @@ abstract contract RouterTestBase is Test {
         HeroV1 heroImpl = new HeroV1();
         InventoryV1 inventoryImpl = new InventoryV1();
 
-        bytes memory heroInit = abi.encodeCall(HeroV1.initialize, (address(0)));
-        TransparentUpgradeableProxy heroProxy = new TransparentUpgradeableProxy(address(heroImpl), owner, heroInit);
+        // Deploy Hero proxy (UUPS)
+        bytes memory heroInit = abi.encodeCall(HeroV1.initialize, (address(0), owner));
+        ERC1967Proxy heroProxy = new ERC1967Proxy(address(heroImpl), heroInit);
         heroLogic = IHeroLogic(address(heroProxy));
 
-        bytes memory inventoryInit = abi.encodeCall(InventoryV1.initialize, (address(0)));
-        TransparentUpgradeableProxy inventoryProxy =
-            new TransparentUpgradeableProxy(address(inventoryImpl), owner, inventoryInit);
+        // Deploy Inventory proxy (UUPS)
+        bytes memory inventoryInit = abi.encodeCall(InventoryV1.initialize, (address(0), owner));
+        ERC1967Proxy inventoryProxy = new ERC1967Proxy(address(inventoryImpl), inventoryInit);
         inventoryLogic = IInventoryLogic(address(inventoryProxy));
 
+        // Deploy Game proxy (UUPS)
         bytes memory gameInit = abi.encodeCall(
             GameV1.initialize,
             (
@@ -77,10 +79,11 @@ abstract contract RouterTestBase is Test {
                 address(protocolImpl),
                 address(vrfCoordinatorMock),
                 bytes32(0),
-                vrfSubId
+                vrfSubId,
+                owner
             )
         );
-        TransparentUpgradeableProxy gameProxy = new TransparentUpgradeableProxy(address(gameImpl), owner, gameInit);
+        ERC1967Proxy gameProxy = new ERC1967Proxy(address(gameImpl), gameInit);
         gameLogic = IGameLogic(address(gameProxy));
 
         // 3. Add game as consumer
