@@ -48,6 +48,9 @@ The player starts on floor 1 and climbs up to floor 100 by defeating monsters, c
 
 ---
 
+## Preview
+![Capture](docs/img/gamefi-aoka-preview.png)
+---
 ## Contracts & Architecture
 ![Architecture](docs/img/architecture.png)
 
